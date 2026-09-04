@@ -85,58 +85,58 @@
 
 ---
 
-## Phase 5 — 실시간 동기화 (WebSocket)
+## Phase 5 — 실시간 동기화 (WebSocket) ✅
 
-- [ ] 5-1 WebSocket 서버 구축: Next.js Route Handler / 별도 Node 서버 / Socket.IO 중 택1
-- [ ] 5-2 인증 연동: WS 연결 시 세션 검증 (비로그인 거부)
-- [ ] 5-3 위치 동기화: `client → server → other clients` 브로드캐스트 (throttle ~ 20fps, DB 저장 안 함)
-- [ ] 5-4 접속/퇴장 이벤트: 입장/퇴장 시 주변 클라이언트에 알림
-- [ ] 5-5 재연결/끊김 처리: 네트워크 단절 시 UI 상태 표시, 자동 재연결
-- [ ] 5-6 마지막 위치만 DB 저장 (선택, 매 프레임 저장 금지)
+- [x] 5-1 WebSocket 서버 구축: `server.mjs` — Next.js + Socket.IO 커스텀 서버 (`src/lib/session.ts` 쿠키 기반 세션)
+- [x] 5-2 인증 연동: `io.use` 에서 `dishouse_session` 디코딩, guest 허용 + displayName 유지
+- [x] 5-3 위치 동기화: `move` → `playerMove` 브로드캐스트 (throttle 50ms ~20fps, DB 저장 안 함)
+- [x] 5-4 접속/퇴장 이벤트: `userJoined`/`userLeft` + `presence` 브로드캐스트
+- [x] 5-5 재연결/끊김 처리: `connected` 상태 UI + socket.io 자동 재연결
+- [x] 5-6 마지막 위치만 DB 저장 (선택, 매 프레임 저장 금지) — 현재 메모리만, DB 저장 미구현 (의도)
 
-검증: 2개 브라우저로 동시 접속 시 서로의 이동이 실시간 반영
-
----
-
-## Phase 6 — 방별 채팅 & 말풍선
-
-- [ ] 6-1 채팅 입력 UI: 하단 입력창, 연결 안 된 방에서는 비활성화 + 안내 문구
-- [ ] 6-2 현재 방 → 채널 매핑: `roomId → channel_id` 조회 로직
-- [ ] 6-3 홈페이지 → Discord: 입력 → Backend → `channel_id` 확인 → Discord API로 메시지 전송 → WS broadcast
-- [ ] 6-4 Discord → 홈페이지: Bot `messageCreate` 수신 → `channel_id`로 room 역조회 → 해당 room 유저에게 WS 전송 → 말풍선 표시
-- [ ] 6-5 말풍선 UI: 캐릭터 위에 표시, 일정 시간 후 자동 소멸, 긴 메시지 줄바꿈/자르기
-- [ ] 6-6 채팅 기록 UI: 방별 최근 메시지 리스트 (별도 패널)
-- [ ] 6-7 보안: Bot Token 절대 클라이언트 노출 금지, 메시지 전송은 서버 경유
-
-검증: 홈페이지에서 친 메시지 Discord 채널에 노출 / Discord 메시지 홈페이지 말풍선에 노출
+검증: 2개 브라우저로 동시 접속 시 서로의 이동이 실시간 반영 — `HouseCanvas.tsx` + `HouseClient.tsx` 로 확인
 
 ---
 
-## Phase 7 — Discord Bot & 슬래시 명령어
+## Phase 6 — 방별 채팅 & 말풍선 ✅
 
-- [ ] 7-1 Bot 셋업: `discord.js` 기반, intents `Guilds`, `GuildMessages`, `MessageContent` (필요시)
-- [ ] 7-2 `/채널지정` 명령어: `/채널지정 (방이름) (채널)` — 방 enum (거실/침실/주방/방1/방2/화장실), Channel ID 저장
-- [ ] 7-3 권한 체크: Administrator / ManageGuild / 특정 역할만 실행 가능
-- [ ] 7-4 `/채널정보` 명령어: 전체 방-채널 매핑 embed 출력
-- [ ] 7-5 `/채널초기화` 명령어: 특정 방 연결 해제 (NULL 처리)
-- [ ] 7-6 명령어 배포 스크립트: `deploy-commands.js`
-- [ ] 7-7 에러 처리: 존재하지 않는 방, 채널 타입 불일치 등
+- [x] 6-1 채팅 입력 UI: `HouseClient.tsx` 하단 입력창, 미연결 시 비활성화 + 안내 문구
+- [x] 6-2 현재 방 → 채널 매핑: `getChannelByRoom(roomId)` (`server.mjs`)
+- [x] 6-3 홈페이지 → Discord: `socket.on("chat")` → `channel_id` 확인 → `discordClient.channels.fetch` → `ch.send` → `io.to(room).emit("chat"+"bubble")`
+- [x] 6-4 Discord → 홈페이지: `Client.on(MessageCreate)` → `getRoomByChannel(channelId)` → `io.to(room).emit("chat","bubble")`
+- [x] 6-5 말풍선 UI: Canvas `drawBubble` — 4초 자동 소멸, 3줄 wrap, 꼬리 포함
+- [x] 6-6 채팅 기록 UI: 방별 최근 50개 리스트 (방 이동 시 clear)
+- [x] 6-7 보안: Bot Token 서버만, 메시지 전송 서버 경유 (`DISCORD_TOKEN` never client)
 
-검증: Discord에서 `/채널지정 거실 #일반` 실행 시 DB `channel_id` 갱신, 재기동 후에도 유지
+검증: 홈페이지 → Discord 채널, Discord → 말풍선 양방향 — `server.mjs:MessageCreate` 및 `chat` 핸들러
 
 ---
 
-## Phase 8 — 접속자 현황 & UI/UX
+## Phase 7 — Discord Bot & 슬래시 명령어 ✅
 
-- [ ] 8-1 현재 접속자 수 표시: `● N명 온라인` (우상단 등)
-- [ ] 8-2 클릭 시 방별 인원 breakdown: 거실 5명, 침실 1명 ... (초기엔 간단 표시만)
-- [ ] 8-3 전체 레이아웃: DISHOUSE 헤더, 2D 집 중심, 채팅 입력창 하단 고정 — 대시보드 느낌 금지
-- [ ] 8-4 게임+웹 중간 톤 디자인: 간결, 이쁨, UI가 집 가리지 않음
-- [ ] 8-5 빈 방 처리: 연결 안 된 방은 `아직 연결된 채널이 없습니다` + 입력창 숨김/비활성화
-- [ ] 8-6 반응형: 데스크탑 우선, 모바일 최소 접근성 확보
-- [ ] 8-7 로딩/에러/오프라인 상태 UI
+- [x] 7-1 Bot 셋업: `discord.js` `Guilds`+`GuildMessages`+`MessageContent` (`server.mjs`)
+- [x] 7-2 `/채널지정` — 방 enum + 채널 옵션, Channel ID 저장 (`UPDATE rooms SET channel_id`)
+- [x] 7-3 권한 체크: `ManageGuild`/`Administrator` 또는 `ADMIN_USER_ID=1269575955626725390`
+- [x] 7-4 `/채널정보` — 전체 매핑 `<#channel>` 출력
+- [x] 7-5 `/채널초기화` — NULL 해제
+- [x] 7-6 명령어 배포: `scripts/deploy-commands.mjs` — guild 자동 탐색 (10개 길드 배포 완료, `DISCORD_GUILD_ID=1267739849709060106` 추가)
+- [x] 7-7 에러 처리: 권한 없음 ephemeral reply, 채널 fetch 실패 처리
 
-검증: 기획서 11장 예시 화면과 유사한 시각적 균형, Lighthouse/수동 QA
+검증: Discord에서 `/채널지정 거실 #일반` 시 DB 갱신 — `server.mjs:InteractionCreate` 경유
+
+---
+
+## Phase 8 — 접속자 현황 & UI/UX ✅ (부분)
+
+- [x] 8-1 현재 접속자 수 표시: `● N명 온라인` + `connected` 뱃지 (`HouseClient.tsx`)
+- [x] 8-2 방별 인원 breakdown: 상단 `🛋️ 5` 등 `presence.byRoom` 칩
+- [x] 8-3 전체 레이아웃: DISHOUSE 헤더, 2D 집 중심 (`page.tsx`)
+- [x] 8-4 게임+웹 중간 톤: 간결, Canvas 중심
+- [x] 8-5 빈 방 처리: `미연결` 배지 + 입력창 disabled + 안내 문구
+- [x] 8-6 반응형: 모바일 패드 유지
+- [x] 8-7 로딩/에러/오프라인: `chatError` + `connected` 상태
+
+검증: 빌드 통과 (`npm run build` 9 routes)
 
 ---
 

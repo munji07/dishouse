@@ -1,29 +1,17 @@
 import { cookies } from "next/headers";
+import { COOKIE_NAME, decodeSession, type Session } from "./session";
 
-const COOKIE = "dishouse_session";
-
-// Very simple session: base64url JSON (dev MVP). TODO: replace with iron-session/JWT + encryption.
-export type Session = {
-  discordId: string;
-  username: string;
-  displayName: string;
-  avatar: string | null;
-  avatarUrl: string | null;
-};
+export type { Session };
+export { COOKIE_NAME };
 
 export async function getSession(): Promise<Session | null> {
-  const c = (await cookies()).get(COOKIE)?.value;
-  if (!c) return null;
-  try {
-    return JSON.parse(Buffer.from(c, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
+  const c = (await cookies()).get(COOKIE_NAME)?.value;
+  return decodeSession(c);
 }
 
 export async function setSession(s: Session) {
   const val = Buffer.from(JSON.stringify(s), "utf8").toString("base64url");
-  (await cookies()).set(COOKIE, val, {
+  (await cookies()).set(COOKIE_NAME, val, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -33,7 +21,7 @@ export async function setSession(s: Session) {
 }
 
 export async function clearSession() {
-  (await cookies()).delete(COOKIE);
+  (await cookies()).delete(COOKIE_NAME);
 }
 
 export function discordAvatarUrl(id: string, avatar: string | null) {

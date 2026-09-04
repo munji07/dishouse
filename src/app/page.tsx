@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
-import HouseCanvas from "@/components/HouseCanvas";
+import HouseClient from "@/components/HouseClient";
 
 export default async function Home() {
   const c = (await cookies()).get("dishouse_session")?.value;
-  let me: { displayName: string; avatarUrl: string | null } | null = null;
+  let me: { displayName: string; avatarUrl: string | null; discordId: string } | null = null;
   if (c) {
     try {
       const s = JSON.parse(Buffer.from(c, "base64url").toString("utf8"));
-      me = { displayName: s.displayName, avatarUrl: s.avatarUrl };
+      me = { displayName: s.displayName, avatarUrl: s.avatarUrl, discordId: s.discordId };
     } catch {}
   }
 
@@ -37,14 +37,9 @@ export default async function Home() {
           </div>
         )}
 
-        <HouseCanvas me={me} />
+        <HouseClient me={me} />
 
-        <div className="rounded-xl border bg-white p-3 flex gap-2">
-          <input disabled={!me} placeholder={me ? "메시지를 입력하세요… (다음 단계에서 Discord로 전송)" : "로그인 후 채팅 가능"} className="flex-1 px-3 py-2 rounded-lg border bg-zinc-50 disabled:opacity-50" />
-          <button disabled={!me} className="px-4 py-2 rounded-lg bg-zinc-900 text-white disabled:opacity-50">➤</button>
-        </div>
-
-        <p className="text-xs text-zinc-400 text-center">MVP Phase 0-3 · 2D 집 프로토타입 — 다음: DB 마이그레이션, OAuth 검증, WebSocket</p>
+        <p className="text-xs text-zinc-400 text-center">MVP Phase 5 · WebSocket + Discord 연동 — <a href="/api/rooms" className="underline">/api/rooms</a>에서 방-채널 확인</p>
       </main>
     </div>
   );
