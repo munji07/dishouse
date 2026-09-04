@@ -1,21 +1,27 @@
 {
-  "name": "tmp_init",
+  "name": "dishouse",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
     "next": "16.3.4",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

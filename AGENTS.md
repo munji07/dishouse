@@ -1,3 +1,12 @@
+# DISHOUSE — Agent Guide
+
+- Next.js 16 (App Router, `src/`), Tailwind 4, TypeScript
+- DB: Supabase Postgres via `pg` (`DATABASE_URL` pooler, ssl rejectUnauthorized false, strip sslmode param) — table `rooms` (id/name/channel_id)
+- Auth: Discord OAuth2 (`/api/auth/login` → `/api/auth/callback`), session cookie `dishouse_session` (base64url JSON, httpOnly)
+- Discord: `DISCORD_CLIENT_ID=1516064597638123730`, `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `NEXT_PUBLIC_SITE_URL`
+- 2D: `src/components/HouseCanvas.tsx` — Canvas, 6 rooms rect map, WASD/arrow move, mobile pad
+- Scripts: `npm run migrate` seeds rooms
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
