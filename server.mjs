@@ -4,7 +4,7 @@ import { createServer } from "http";
 import next from "next";
 import { Server } from "socket.io";
 import pg from "pg";
-import { Client, GatewayIntentBits, Events, PermissionFlagsBits } from "discord.js";
+import { Client, GatewayIntentBits, Events } from "discord.js";
 // Simple session decode inline (avoid TS import)
 const COOKIE_NAME = "dishouse_session";
 function decodeSessionInline(val) {
@@ -80,33 +80,8 @@ if (discordToken) {
     io.to(`room:${roomId}`).emit("bubble", { roomId, userId: msg.author.id, content: msg.content.slice(0, 80) });
   });
 
-  discordClient.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    const member = interaction.member;
-    const hasPerm = member?.permissions && (member.permissions.has(PermissionFlagsBits.ManageGuild) || member.permissions.has(PermissionFlagsBits.Administrator) || member.user.id === "1269575955626725390");
-    try {
-      if (interaction.commandName === "채널지정") {
-        if (!hasPerm) return interaction.reply({ content: "권한이 없습니다. (서버 관리 권한 필요)", ephemeral: true });
-        const roomId = interaction.options.getString("방", true);
-        const channel = interaction.options.getChannel("채널", true);
-        // only text channels
-        await pool.query(`UPDATE rooms SET channel_id=$2, updated_at=now() WHERE id=$1`, [roomId, channel.id]);
-        await interaction.reply(`✅ ${ROOM_EMOJI[roomId] ?? ""} **${ROOM_LABEL[roomId] ?? roomId}** → <#${channel.id}> 연결 완료`);
-      } else if (interaction.commandName === "채널정보") {
-        const { rows } = await pool.query(`SELECT id, channel_id FROM rooms ORDER BY id`);
-        const lines = rows.map(r => `${ROOM_EMOJI[r.id] ?? "·"} ${ROOM_LABEL[r.id] ?? r.id} → ${r.channel_id ? `<#${r.channel_id}>` : "`미연결`"}`);
-        await interaction.reply(`🏠 **DISHOUSE 방 채널 설정**\n${lines.join("\n")}`);
-      } else if (interaction.commandName === "채널초기화") {
-        if (!hasPerm) return interaction.reply({ content: "권한이 없습니다.", ephemeral: true });
-        const roomId = interaction.options.getString("방", true);
-        await pool.query(`UPDATE rooms SET channel_id=NULL, updated_at=now() WHERE id=$1`, [roomId]);
-        await interaction.reply(`🗑️ ${ROOM_LABEL[roomId] ?? roomId} 연결 해제 완료`);
-      }
-    } catch (e) {
-      console.error("[interaction]", e);
-      if (!interaction.replied) await interaction.reply({ content: `오류: ${String(e.message ?? e)}`, ephemeral: true }).catch(()=>{});
-    }
-  });
+  // slash commands moved to 03_support-bot (guild 1538513625730383902) — keep 04 for chat bridge only
+  // InteractionCreate disabled to avoid duplicate handling with support-bot (same token)
 
   discordClient.login(discordToken).catch(e => console.error("[discord login]", e));
 } else {
