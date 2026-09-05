@@ -5,6 +5,67 @@ import next from "next";
 import { Server } from "socket.io";
 import pg from "pg";
 import { Client, GatewayIntentBits, Events } from "discord.js";
+import Database from "better-sqlite3";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const supportDbPath = path.join(__dirname, "..", "03_support-bot", "progress.db");
+let supportDb = null;
+try {
+  supportDb = new Database(supportDbPath, { readonly: false });
+  supportDb.pragma("journal_mode = WAL");
+  supportDb.exec(`CREATE TABLE IF NOT EXISTS dishouse_inventory (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    owned_hats TEXT NOT NULL DEFAULT '[]',
+    owned_colors TEXT NOT NULL DEFAULT '[]',
+    equipped_hat TEXT NOT NULL DEFAULT 'none',
+    equipped_color TEXT NOT NULL DEFAULT '#8b5a2b',
+    PRIMARY KEY (guild_id, user_id)
+  )`);
+  console.log(`[shop] support DB at ${supportDbPath}`);
+} catch (e) { console.warn("[shop] no support DB", e.message); }
+
+const HATS = [
+  { id: "none", price: 0 },
+  { id: "cap", price: 1000 },
+  { id: "beret", price: 2000 },
+  { id: "crown", price: 5000 },
+  { id: "top", price: 3500 },
+];
+const COLORS = [
+  { id: "#8b5a2b", price: 0 },
+  { id: "#e63946", price: 800 },
+  { id: "#457b9d", price: 800 },
+  { id: "#2a9d8f", price: 800 },
+  { id: "#9d4edd", price: 1200 },
+  { id: "#f4a261", price: 800 },
+];
+const LEVEL_GUILD_ID = "1538513625730383902";
+
+function getCoins(userId) {
+  if (!supportDb) return 0;
+  try {
+    const row = supportDb.prepare("SELECT coins FROM user_progress WHERE guild_id=? AND user_id=?").get(LEVEL_GUILD_ID, userId);
+    return Number(row?.coins ?? 0);
+  } catch { return 0; }
+}
+function getInventory(userId) {
+  if (!supportDb) return { owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#8b5a2b" };
+  let row = supportDb.prepare("SELECT * FROM dishouse_inventory WHERE guild_id=? AND user_id=?").get(LEVEL_GUILD_ID, userId);
+  if (!row) {
+    supportDb.prepare("INSERT OR IGNORE INTO dishouse_inventory (guild_id, user_id) VALUES (?,?)").run(LEVEL_GUILD_ID, userId);
+    row = supportDb.prepare("SELECT * FROM dishouse_inventory WHERE guild_id=? AND user_id=?").get(LEVEL_GUILD_ID, userId);
+  }
+  return {
+    owned_hats: JSON.parse(row.owned_hats || "[]"),
+    owned_colors: JSON.parse(row.owned_colors || "[]"),
+    equipped_hat: row.equipped_hat || "none",
+    equipped_color: row.equipped_color || "#8b5a2b",
+  };
+}
 // Simple session decode inline (avoid TS import)
 const COOKIE_NAME = "dishouse_session";
 function decodeSessionInline(val) {
@@ -123,13 +184,21 @@ io.on("connection", (socket) => {
   const userId = sess?.discordId ?? `guest:${socket.id.slice(0,6)}`;
   const displayName = sess?.displayName ?? sess?.username ?? "게스트";
   const avatarUrl = sess?.avatarUrl ?? null;
+  const isGuest = userId.startsWith("guest:");
 
-  // join lobby initially, will move to room on "joinRoom"
   console.log(`[socket] connect ${socket.id} as ${displayName} (${userId})`);
 
-  // initial presence
-  presence.set(socket.id, { userId, displayName, avatarUrl, room: "living", pos: { x: 150, y: 150 } });
+  const inv = isGuest ? { equipped_hat: "none", equipped_color: "#6b7280", owned_hats: [], owned_colors: [] } : getInventory(userId);
+  const mySkin = { hat: inv.equipped_hat, color: inv.equipped_color };
+  presence.set(socket.id, { userId, displayName, avatarUrl, room: "living", pos: { x: 150, y: 150 }, skin: mySkin });
   broadcastPresence();
+  if (!isGuest) {
+    socket.emit("shop:state", { coins: getCoins(userId), owned_hats: inv.owned_hats, owned_colors: inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
+    // broadcast my skin to others already in room
+    socket.broadcast.emit("playerSkin", { userId, skin: mySkin });
+  } else {
+    socket.emit("shop:state", { coins: 0, owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#6b7280", guest: true });
+  }
 
   socket.on("joinRoom", (roomId) => {
     const prev = presence.get(socket.id);
@@ -147,9 +216,51 @@ io.on("connection", (socket) => {
   socket.on("move", ({ pos, roomId }) => {
     const prev = presence.get(socket.id);
     if (!prev) return;
-    // throttle not enforced server side for MVP
     presence.set(socket.id, { ...prev, pos, room: roomId ?? prev.room });
-    socket.to(`room:${roomId ?? prev.room}`).emit("playerMove", { userId, displayName, avatarUrl, pos, roomId: roomId ?? prev.room });
+    socket.to(`room:${roomId ?? prev.room}`).emit("playerMove", { userId, displayName, avatarUrl, pos, roomId: roomId ?? prev.room, skin: prev.skin });
+  });
+
+  socket.on("shop:buy", ({ type, id }) => {
+    if (isGuest) return socket.emit("shop:error", { message: "로그인 후 상점을 이용할 수 있어요." });
+    const catalog = type === "hat" ? HATS : COLORS;
+    const item = catalog.find((x) => x.id === id);
+    if (!item) return socket.emit("shop:error", { message: "없는 아이템이에요." });
+    const inv = getInventory(userId);
+    const owned = type === "hat" ? inv.owned_hats : inv.owned_colors;
+    if (owned.includes(id) || item.price === 0) return socket.emit("shop:error", { message: "이미 보유한 아이템이에요." });
+    const coins = getCoins(userId);
+    if (coins < item.price) return socket.emit("shop:error", { message: `코인이 부족해요. 보유 ${coins} / 필요 ${item.price}` });
+    try {
+      supportDb.prepare("UPDATE user_progress SET coins = coins - ? WHERE guild_id=? AND user_id=?").run(item.price, LEVEL_GUILD_ID, userId);
+      const newOwned = [...owned, id];
+      if (type === "hat") supportDb.prepare("UPDATE dishouse_inventory SET owned_hats=? WHERE guild_id=? AND user_id=?").run(JSON.stringify(newOwned), LEVEL_GUILD_ID, userId);
+      else supportDb.prepare("UPDATE dishouse_inventory SET owned_colors=? WHERE guild_id=? AND user_id=?").run(JSON.stringify(newOwned), LEVEL_GUILD_ID, userId);
+      const newCoins = getCoins(userId);
+      socket.emit("shop:state", { coins: newCoins, owned_hats: type === "hat" ? newOwned : inv.owned_hats, owned_colors: type === "color" ? newOwned : inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
+      socket.emit("shop:ok", { message: `${id} 구매 완료!` });
+    } catch (e) { socket.emit("shop:error", { message: String(e.message) }); }
+  });
+
+  socket.on("shop:equip", ({ hat, color }) => {
+    if (isGuest) return;
+    const inv = getInventory(userId);
+    let nh = inv.equipped_hat, nc = inv.equipped_color;
+    if (hat !== undefined) {
+      if (hat !== "none" && !inv.owned_hats.includes(hat)) return socket.emit("shop:error", { message: "보유하지 않은 모자예요." });
+      nh = hat; supportDb.prepare("UPDATE dishouse_inventory SET equipped_hat=? WHERE guild_id=? AND user_id=?").run(hat, LEVEL_GUILD_ID, userId);
+    }
+    if (color !== undefined) {
+      const free = color === "#8b5a2b";
+      if (!free && !inv.owned_colors.includes(color)) return socket.emit("shop:error", { message: "보유하지 않은 색이에요." });
+      nc = color; supportDb.prepare("UPDATE dishouse_inventory SET equipped_color=? WHERE guild_id=? AND user_id=?").run(color, LEVEL_GUILD_ID, userId);
+    }
+    const skin = { hat: nh, color: nc };
+    const prev = presence.get(socket.id);
+    if (prev) { presence.set(socket.id, { ...prev, skin }); }
+    socket.emit("shop:state", { coins: getCoins(userId), owned_hats: hat !== undefined ? inv.owned_hats : inv.owned_hats, owned_colors: color !== undefined ? inv.owned_colors : inv.owned_colors, equipped_hat: nh, equipped_color: nc });
+    // broadcast to others
+    socket.broadcast.emit("playerSkin", { userId, skin });
+    io.emit("playerSkin", { userId, skin });
   });
 
   socket.on("chat", async ({ roomId, content }) => {

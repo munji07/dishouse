@@ -44,31 +44,54 @@ export default function HouseCanvas({
   bubbles = [],
   onRoomChange,
   socket,
+  mySkin,
+  othersSkins = {},
 }: {
   me: { displayName: string; avatarUrl: string | null } | null;
   others?: OtherPlayer[];
   bubbles?: Bubble[];
   onRoomChange?: (roomId: string) => void;
   socket?: Socket | null;
+  mySkin?: { hat: string; color: string };
+  othersSkins?: Record<string, { hat: string; color: string }>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const posRef = useRef<Pos>({ x: 150, y: 120 });
+  const targetRef = useRef<Pos | null>(null);
   const [room, setRoom] = useState("living");
+  const equipped = mySkin ?? { hat: "none", color: "#8b5a2b" };
   const avatarImgRef = useRef<HTMLImageElement | null>(null);
   const otherImgs = useRef<Map<string, HTMLImageElement>>(new Map());
   const lastEmit = useRef(0);
 
   useEffect(() => { onRoomChange?.(room); }, [room, onRoomChange]);
 
+  // click-to-move target
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const onClick = (e: MouseEvent) => {
+      const rect = c.getBoundingClientRect();
+      const sx = c.width / rect.width;
+      const sy = c.height / rect.height;
+      const x = (e.clientX - rect.left) * sx;
+      const y = (e.clientY - rect.top) * sy;
+      targetRef.current = { x: Math.max(22, Math.min(MAP.width - 22, x)), y: Math.max(22, Math.min(MAP.height - 22, y)) };
+    };
+    c.addEventListener("click", onClick);
+    return () => c.removeEventListener("click", onClick);
+  }, []);
+
   useEffect(() => {
     const keys = new Set<string>();
-    const onDown = (e: KeyboardEvent) => keys.add(e.key.toLowerCase());
+    const onDown = (e: KeyboardEvent) => { keys.add(e.key.toLowerCase()); if (["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(e.key.toLowerCase())) targetRef.current = null; };
     const onUp = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
     window.addEventListener("keydown", onDown);
     window.addEventListener("keyup", onUp);
     let raf = 0;
     const tick = () => {
       let dx = 0, dy = 0;
+      let moved = false;
       if (keys.has("w") || keys.has("arrowup")) dy -= 2.8;
       if (keys.has("s") || keys.has("arrowdown")) dy += 2.8;
       if (keys.has("a") || keys.has("arrowleft")) dx -= 2.8;
@@ -76,19 +99,31 @@ export default function HouseCanvas({
       if (dx || dy) {
         const nx = Math.max(22, Math.min(MAP.width - 22, posRef.current.x + dx));
         const ny = Math.max(22, Math.min(MAP.height - 22, posRef.current.y + dy));
-        // simple wall collision: check if new pos inside any room or door; if not inside any room, block unless near door
         const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
         const nearDoor = DOORS.some((d) => nx >= d.x - 6 && nx < d.x + d.w + 6 && ny >= d.y - 6 && ny < d.y + d.h + 6);
-        if (inside || nearDoor) {
-          posRef.current.x = nx;
-          posRef.current.y = ny;
+        if (inside || nearDoor) { posRef.current.x = nx; posRef.current.y = ny; moved = true; }
+      } else if (targetRef.current) {
+        const tx = targetRef.current.x, ty = targetRef.current.y;
+        const vx = tx - posRef.current.x, vy = ty - posRef.current.y;
+        const dist = Math.hypot(vx, vy);
+        if (dist < 3) { targetRef.current = null; }
+        else {
+          const step = Math.min(2.8, dist);
+          const nx = posRef.current.x + (vx / dist) * step;
+          const ny = posRef.current.y + (vy / dist) * step;
+          const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
+          const nearDoor = DOORS.some((d) => nx >= d.x - 6 && nx < d.x + d.w + 6 && ny >= d.y - 6 && ny < d.y + d.h + 6);
+          if (inside || nearDoor) { posRef.current.x = nx; posRef.current.y = ny; moved = true; }
+          else targetRef.current = null;
         }
+      }
+      if (moved) {
         const nr = getRoomId(posRef.current);
         if (nr !== room) setRoom(nr);
         const now = Date.now();
         if (socket && now - lastEmit.current > 50) {
           lastEmit.current = now;
-          socket.emit("move", { pos: { ...posRef.current }, roomId: nr });
+          socket.emit("move", { pos: { ...posRef.current }, roomId: getRoomId(posRef.current) });
         }
       }
       raf = requestAnimationFrame(tick);
@@ -181,17 +216,24 @@ export default function HouseCanvas({
         ctx.fillRect(d.x - 4, d.y - 4, d.w + 8, 8);
       }
 
+      // target indicator
+      if (targetRef.current) {
+        ctx.fillStyle = "rgba(139,90,43,0.25)";
+        ctx.beginPath(); ctx.arc(targetRef.current.x, targetRef.current.y, 6, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = "#8b5a2b"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(targetRef.current.x, targetRef.current.y, 6, 0, Math.PI*2); ctx.stroke();
+      }
       // players (others dim if different room)
       for (const o of others) {
         const same = o.room === room;
+        const skin = othersSkins[o.id] ?? { hat: "none", color: "#6b7280" };
         ctx.globalAlpha = same ? 1 : 0.32;
-        drawCharacter(ctx, o.pos, o.name, otherImgs.current.get(o.id) ?? null, same);
+        drawCharacter(ctx, o.pos, o.name, otherImgs.current.get(o.id) ?? null, same, false, skin);
         const b = bubbles.find((bb) => bb.userId === o.id);
         if (b) drawBubble(ctx, o.pos, b.content);
         ctx.globalAlpha = 1;
       }
       // me
-      drawCharacter(ctx, posRef.current, me?.displayName ?? "게스트", avatarImgRef.current, true, true);
+      drawCharacter(ctx, posRef.current, me?.displayName ?? "게스트", avatarImgRef.current, true, true, equipped);
       let ownB: Bubble | undefined;
       if (bubbles.length) {
         const unmatched = bubbles.filter((b) => !others.some((o) => o.id === b.userId));
@@ -271,12 +313,12 @@ function drawRoomLabel(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
   ctx.fillText(label, x + w/2, y + 11);
 }
 
-function drawCharacter(ctx: CanvasRenderingContext2D, pos: Pos, name: string, avatar: HTMLImageElement | null, sameRoom=true, isMe=false) {
+function drawCharacter(ctx: CanvasRenderingContext2D, pos: Pos, name: string, avatar: HTMLImageElement | null, sameRoom=true, isMe=false, skin: { hat: string; color: string } = { hat: "none", color: isMe ? "#8b5a2b" : "#6b7280" }) {
   // shadow
   ctx.fillStyle = "rgba(0,0,0,0.12)";
   ctx.beginPath(); ctx.ellipse(pos.x, pos.y + 10, 10, 4, 0, 0, Math.PI*2); ctx.fill();
-  // body — cozy sweater
-  ctx.fillStyle = isMe ? "#8b5a2b" : "#6b7280";
+  // body — cozy sweater with skin color
+  ctx.fillStyle = skin.color || (isMe ? "#8b5a2b" : "#6b7280");
   ctx.strokeStyle = "rgba(0,0,0,0.12)"; ctx.lineWidth = 1;
   roundRect(ctx, pos.x - 9, pos.y - 2, 18, 14, 4); ctx.fill(); ctx.stroke();
   // head avatar
@@ -289,10 +331,16 @@ function drawCharacter(ctx: CanvasRenderingContext2D, pos: Pos, name: string, av
   ctx.strokeStyle = isMe ? "#fde68a" : "white"; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(pos.x, pos.y - 12, 14, 0, Math.PI*2); ctx.stroke();
   if (isMe) { ctx.strokeStyle = "#8b5a2b"; ctx.lineWidth = 1; ctx.stroke(); }
+  // hat
+  if (skin.hat && skin.hat !== "none") {
+    const hats: Record<string,string> = { cap:"🧢", crown:"👑", beret:"👒", top:"🎩", halo:"😇" };
+    ctx.font = "16px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(hats[skin.hat] ?? "🧢", pos.x, pos.y - 28);
+  }
   // name pill
   ctx.font = "700 11px sans-serif";
   const tw = ctx.measureText(name).width + 14;
-  const nx = pos.x - tw/2, ny = pos.y - 36;
+  const nx = pos.x - tw/2, ny = pos.y - 36 - (skin.hat !== "none" ? 10 : 0);
   ctx.fillStyle = isMe ? "#2d1b0e" : "rgba(45,27,14,0.92)";
   roundRect(ctx, nx, ny, tw, 14, 7); ctx.fill();
   ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.fillText(name, pos.x, ny + 10);

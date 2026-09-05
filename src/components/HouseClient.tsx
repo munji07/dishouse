@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ROOMS } from "@/lib/constants";
 import HouseCanvas, { type OtherPlayer, type Bubble } from "./HouseCanvas";
+import { HATS, COLORS } from "@/lib/skins";
 
 type RoomRow = { id: string; name: string; channel_id: string | null };
 type ChatMsg = { id: string; roomId: string; author: { displayName: string; avatar: string | null }; content: string; createdAt: string };
@@ -18,6 +19,10 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
   const [presence, setPresence] = useState<{ total: number; byRoom: Record<string, number> }>({ total: 0, byRoom: {} });
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [shop, setShop] = useState<{ coins: number; owned_hats: string[]; owned_colors: string[]; equipped_hat: string; equipped_color: string } | null>(null);
+  const [shopMsg, setShopMsg] = useState<string | null>(null);
+  const [othersSkins, setOthersSkins] = useState<Record<string, { hat: string; color: string }>>({});
+  const [showShop, setShowShop] = useState(false);
 
   useEffect(() => {
     const s = io({ withCredentials: true });
@@ -26,9 +31,10 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
     s.on("disconnect", () => setConnected(false));
     s.on("rooms", (rows: RoomRow[]) => setRooms(rows));
     s.on("presence", (p) => setPresence(p));
-    s.on("playerMove", ({ userId, displayName, avatarUrl, pos, roomId }) => {
+    s.on("playerMove", ({ userId, displayName, avatarUrl, pos, roomId, skin }) => {
       if (me && userId === me.discordId) return;
       setOthers((prev) => ({ ...prev, [userId]: { id: userId, name: displayName, avatarUrl, pos, room: roomId } }));
+      if (skin) setOthersSkins((p) => ({ ...p, [userId]: skin }));
     });
     s.on("userJoined", ({ userId, displayName, avatarUrl, roomId }) => {
       setOthers((prev) => ({ ...prev, [userId]: { id: userId, name: displayName, avatarUrl, pos: { x: 150, y: 150 }, room: roomId } }));
@@ -47,6 +53,10 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
       setTimeout(() => setBubbles((prev) => { const n = { ...prev }; delete n[id]; return n; }), 4000);
     });
     s.on("chatError", ({ message }) => setError(message));
+    s.on("shop:state", (st) => setShop(st));
+    s.on("shop:ok", ({ message }) => { setShopMsg(message); setTimeout(() => setShopMsg(null), 2500); });
+    s.on("shop:error", ({ message }) => { setShopMsg(message); setTimeout(() => setShopMsg(null), 2500); });
+    s.on("playerSkin", ({ userId, skin }) => setOthersSkins((p) => ({ ...p, [userId]: skin })));
     return () => { s.disconnect(); };
   }, [me, currentRoom]);
 
@@ -111,9 +121,63 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
             <div className="text-[11px] text-[#fde68a]/80">● ● ●</div>
           </div>
           <div className="p-2 sm:p-3 bg-[#f5ece0]">
-            <HouseCanvas me={me} others={Object.values(others)} bubbles={Object.values(bubbles)} onRoomChange={handleRoomChange} socket={socket} />
+            <HouseCanvas me={me} others={Object.values(others)} bubbles={Object.values(bubbles)} onRoomChange={handleRoomChange} socket={socket} mySkin={shop ? { hat: shop.equipped_hat, color: shop.equipped_color } : undefined} othersSkins={othersSkins} />
           </div>
         </div>
+      </div>
+
+      {/* shop — coin + skin */}
+      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-sm overflow-hidden">
+        <button onClick={() => setShowShop(!showShop)} className="w-full h-10 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3 hover:bg-[#fef3c7]">
+          <span className="text-sm font-black text-[#2d1b0e] flex items-center gap-2">🎨 캐릭터 꾸미기 {shop && <span className="px-2 py-0.5 rounded-full bg-[#2d1b0e] text-white text-xs">💰 {shop.coins.toLocaleString()} 코인</span>}</span>
+          <span className="text-xs text-[#8b6a4a]">{showShop ? "▲ 닫기" : "▼ 열기"} · 03 채팅 코인 사용</span>
+        </button>
+        {showShop && (
+          <div className="p-3 flex flex-col gap-3 bg-[#fdfaf5]">
+            {!me ? <span className="text-xs text-[#b89a7a]">로그인 후 상점을 이용할 수 있어요. 코인은 디스코드 채팅으로 얻어요.</span> :
+            !shop ? <span className="text-xs">불러오는 중…</span> : (
+              <>
+                {shopMsg && <div className="text-xs px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">{shopMsg}</div>}
+                <div>
+                  <div className="text-xs font-black text-[#5c3a1a] mb-1.5">🧢 모자</div>
+                  <div className="flex flex-wrap gap-2">
+                    {HATS.map((h) => {
+                      const owned = h.price === 0 || shop.owned_hats.includes(h.id);
+                      const equipped = shop.equipped_hat === h.id;
+                      return (
+                        <div key={h.id} className={`px-2.5 py-2 rounded-xl border text-xs flex flex-col items-center gap-1 min-w-[72px] ${equipped ? "bg-[#8b5a2b] text-white border-[#5c3a1a]" : "bg-white border-[#e7d5b8]"}`}>
+                          <span className="text-lg">{h.emoji}</span><span className="font-bold">{h.name}</span><span className="text-[11px] opacity-70">{h.price === 0 ? "기본" : `${h.price.toLocaleString()} 코인`}</span>
+                          {equipped ? <span className="text-[11px] font-black">착용중</span> :
+                            owned ? <button onClick={() => socket?.emit("shop:equip", { hat: h.id })} className="px-2 py-0.5 rounded-full bg-[#2d1b0e] text-white text-[11px]">착용</button> :
+                            <button onClick={() => socket?.emit("shop:buy", { type: "hat", id: h.id })} className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[11px]">구매</button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-black text-[#5c3a1a] mb-1.5">🎨 옷 색</div>
+                  <div className="flex flex-wrap gap-2">
+                    {COLORS.map((c) => {
+                      const owned = c.price === 0 || shop.owned_colors.includes(c.id);
+                      const equipped = shop.equipped_color === c.id;
+                      return (
+                        <div key={c.id} className={`px-2.5 py-2 rounded-xl border text-xs flex flex-col items-center gap-1 min-w-[72px] ${equipped ? "ring-2 ring-[#8b5a2b]" : ""} bg-white border-[#e7d5b8]`}>
+                          <span className="w-6 h-6 rounded-full border" style={{ background: c.id }} />
+                          <span className="font-bold">{c.name}</span><span className="text-[11px] opacity-70">{c.price === 0 ? "기본" : `${c.price.toLocaleString()} 코인`}</span>
+                          {equipped ? <span className="text-[11px] font-black text-[#8b5a2b]">착용중</span> :
+                            owned ? <button onClick={() => socket?.emit("shop:equip", { color: c.id })} className="px-2 py-0.5 rounded-full bg-[#2d1b0e] text-white text-[11px]">착용</button> :
+                            <button onClick={() => socket?.emit("shop:buy", { type: "color", id: c.id })} className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[11px]">구매</button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="text-[11px] text-[#b89a7a]">코인은 디스코드(1538513625730383902)에서 채팅하면 자동으로 얻어요. 상점 구매는 코인을 차감해요.</div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* chat — cozy */}
