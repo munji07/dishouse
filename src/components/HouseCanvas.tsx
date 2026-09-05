@@ -28,22 +28,22 @@ export const MAP = {
   height: 600,
   rooms: [
     { id: "living", name: "거실", emoji: "🛋️", x: 28, y: 28, w: 326, h: 262, defaultChannel: "일반" },
-    { id: "kitchen", name: "주방", emoji: "🍳", x: 374, y: 28, w: 250, h: 162, defaultChannel: "요리" },
-    { id: "bathroom", name: "화장실", emoji: "🚿", x: 644, y: 28, w: 228, h: 162, defaultChannel: "잡담" },
-    { id: "bedroom", name: "침실", emoji: "🛏️", x: 28, y: 310, w: 262, h: 262, defaultChannel: "일상" },
-    { id: "room1", name: "방 1 (게임방)", emoji: "🎮", x: 310, y: 210, w: 278, h: 362, defaultChannel: "게임" },
-    { id: "room2", name: "방 2 (서재)", emoji: "📚", x: 608, y: 210, w: 264, h: 362, defaultChannel: "공부" },
+    { id: "kitchen", name: "주방", emoji: "🍳", x: 354, y: 28, w: 264, h: 162, defaultChannel: "요리" },
+    { id: "bathroom", name: "화장실", emoji: "🚿", x: 618, y: 28, w: 254, h: 162, defaultChannel: "잡담" },
+    { id: "bedroom", name: "침실", emoji: "🛏️", x: 28, y: 290, w: 262, h: 282, defaultChannel: "일상" },
+    { id: "room1", name: "방 1 (게임방)", emoji: "🎮", x: 290, y: 190, w: 310, h: 382, defaultChannel: "게임" },
+    { id: "room2", name: "방 2 (서재)", emoji: "📚", x: 600, y: 190, w: 272, h: 382, defaultChannel: "공부" },
   ] as const,
 };
 
 // Openings between rooms with wooden thresholds
 export const DOORS: { id: string; x: number; y: number; w: number; h: number }[] = [
-  { id: "living-kitchen", x: 354, y: 72, w: 20, h: 52 },
-  { id: "kitchen-bathroom", x: 624, y: 72, w: 20, h: 52 },
-  { id: "living-bedroom", x: 120, y: 290, w: 52, h: 20 },
-  { id: "living-room1", x: 354, y: 220, w: 20, h: 52 },
-  { id: "bedroom-room1", x: 290, y: 390, w: 20, h: 52 },
-  { id: "room1-room2", x: 588, y: 330, w: 20, h: 52 },
+  { id: "living-kitchen", x: 348, y: 72, w: 12, h: 48 },
+  { id: "kitchen-bathroom", x: 612, y: 72, w: 12, h: 48 },
+  { id: "living-bedroom", x: 96, y: 286, w: 48, h: 8 },
+  { id: "living-room1", x: 350, y: 200, w: 8, h: 48 },
+  { id: "bedroom-room1", x: 284, y: 390, w: 12, h: 48 },
+  { id: "room1-room2", x: 594, y: 330, w: 12, h: 48 },
 ];
 
 export function getRoomId(pos: Pos) {
@@ -309,14 +309,13 @@ export default function HouseCanvas({
       // 1. Exterior Garden Lawn & Cobblestone Entrance
       drawCottageExterior(ctx, MAP.width, MAP.height, t, timeOfDay);
 
-      // 2. 6 Cottage Rooms Floor & Walls
+      // 2. 6 Cottage Rooms Floor & Walls (라벨 제외)
       for (const r of MAP.rooms) {
         drawRoomFloor(ctx, r);
         drawRoomRugs(ctx, r);
         drawRoomWindowsAndSunlight(ctx, r, timeOfDay, t);
         drawRoomWallsAndShadows(ctx, r);
         drawHandcraftedFurniture(ctx, r, t, flicker, timeOfDay);
-        drawRoomLabel(ctx, r, room === r.id);
       }
 
       // 3. Thick Log Wall Trim & Doorways
@@ -419,6 +418,11 @@ export default function HouseCanvas({
       // 8. Volumetric Lighting & Atmosphere
       drawTimeOfDayLighting(ctx, timeOfDay, flicker, myPos, others);
 
+      // 9. Room Labels — 최상단 z-order (캐릭터·조명 위에 표시)
+      for (const r of MAP.rooms) {
+        drawRoomLabel(ctx, r, room === r.id);
+      }
+
       raf = requestAnimationFrame(draw);
     };
 
@@ -484,12 +488,12 @@ export default function HouseCanvas({
       </div>
 
       {/* 2D Cottage Frame */}
-      <div className="relative w-full overflow-hidden rounded-2xl border-4 border-[#5c3318] shadow-[0_16px_36px_rgba(45,20,5,0.28)] bg-[#2b170c]">
+      <div className="relative z-0 w-full overflow-hidden rounded-2xl border-4 border-[#5c3318] shadow-[0_16px_36px_rgba(45,20,5,0.28)] bg-[#2b170c]">
         <canvas
           ref={canvasRef}
           width={MAP.width}
           height={MAP.height}
-          className="pixelated w-full h-auto block cursor-pointer"
+          className="pixelated w-full h-auto block cursor-pointer z-0"
           style={{ aspectRatio: "900/600" }}
         />
 
@@ -1380,10 +1384,10 @@ function drawHouseArchitecture(ctx: CanvasRenderingContext2D) {
 
   // Dividing interior timber walls
   ctx.strokeStyle = "#5c3318";
-  ctx.lineWidth = 8;
+  ctx.lineWidth = 4;
 
   // Vertical walls
-  line(ctx, 354, 28, 354, 190);
+  line(ctx, 354, 28, 354, 290);   // 거실 오른쪽 / 주방·방1 경계 (y=28~290 전체)
   line(ctx, 624, 28, 624, 190);
   line(ctx, 290, 310, 290, 572);
   line(ctx, 588, 210, 588, 572);
@@ -1398,7 +1402,7 @@ function drawHouseArchitecture(ctx: CanvasRenderingContext2D) {
     ctx.fillRect(d.x - 2, d.y - 2, d.w + 4, d.h + 4);
 
     ctx.strokeStyle = "#8b5a2b";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(d.x, d.y, d.w, d.h);
 
     // Welcome mat fringe
@@ -1409,11 +1413,11 @@ function drawHouseArchitecture(ctx: CanvasRenderingContext2D) {
 
   // Outer Timber House Frame
   ctx.strokeStyle = "#45240c";
-  ctx.lineWidth = 12;
+  ctx.lineWidth = 8;
   ctx.strokeRect(22, 22, MAP.width - 44, MAP.height - 44);
 
   ctx.strokeStyle = "#784421";
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 4;
   ctx.strokeRect(22, 22, MAP.width - 44, MAP.height - 44);
 
   ctx.restore();
