@@ -279,21 +279,44 @@ async function createHouseForUser(guild, ownerId, displayName) {
   return rows[0];
 }
 async function grantHouseChannelView(guild, channelId, userId) {
-  if (!guild || !channelId || !userId) return;
-  const ch = await guild.channels.fetch(channelId).catch(()=>null);
-  if (!ch) return;
-  const cleanId = String(userId).replace(/[<@!>]/g, '').trim();
-  try {
-    await guild.members.fetch(cleanId).catch(()=>null);
-    await ch.permissionOverwrites.edit(cleanId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
-  } catch (e) { console.warn('[house grant]', e.message); }
+    if (!guild || !channelId || !userId) return;
+    const ch = await guild.channels.fetch(channelId).catch(() => null);
+    if (!ch) return;
+    const cleanId = String(userId)
+        .replace(/[<@!>]/g, '')
+        .trim();
+    try {
+        const member = await guild.members.fetch(cleanId).catch(() => null);
+        if (!member) {
+            console.warn('[house grant] Member not found:', cleanId);
+            return;
+        }
+        await ch.permissionOverwrites.edit(member.user, {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true
+        });
+    } catch (e) {
+        console.warn('[house grant]', e);
+    }
 }
 async function revokeHouseChannelView(guild, channelId, userId) {
-  if (!guild || !channelId || !userId) return;
-  const ch = await guild.channels.fetch(channelId).catch(()=>null);
-  if (!ch) return;
-  const cleanId = String(userId).replace(/[<@!>]/g, '').trim();
-  try { await ch.permissionOverwrites.delete(cleanId).catch(()=>{}); } catch (e) { console.warn('[house revoke]', e.message); }
+    if (!guild || !channelId || !userId) return;
+    const ch = await guild.channels.fetch(channelId).catch(() => null);
+    if (!ch) return;
+    const cleanId = String(userId)
+        .replace(/[<@!>]/g, '')
+        .trim();
+    try {
+        const member = await guild.members.fetch(cleanId).catch(() => null);
+        if (!member) {
+            console.warn('[house revoke] Member not found:', cleanId);
+            return;
+        }
+        await ch.permissionOverwrites.delete(member.user);
+    } catch (e) {
+        console.warn('[house revoke]', e);
+    }
 }
 async function getRoomByChannel(channelId) {
   const { rows } = await pool.query(`SELECT id FROM rooms WHERE channel_id=$1 LIMIT 1`, [channelId]);
