@@ -189,8 +189,8 @@ const handle = app.getRequestHandler();
 // DB — rooms 등은 pool 재사용 (pgPool과 동일 커넥션)
 const pool = pgPool ?? new pg.Pool({ connectionString: (process.env.DATABASE_URL || "").replace(/[?&]sslmode=[^&]+/g, "").replace(/[?&]channel_binding=[^&]+/g, ""), ssl: { rejectUnauthorized: false } });
 
-const ROOM_IDS = ["living", "bedroom", "kitchen", "room1", "room2", "bathroom"];
-const ROOM_LABEL = { living:"거실", bedroom:"침실", kitchen:"주방", room1:"방 1", room2:"방 2", bathroom:"화장실" };
+const ROOM_IDS = ["living", "bedroom", "kitchen", "bathroom", "room1", "room2"];
+const ROOM_LABEL = { living:"𖠿・𝐋𝐨𝐮𝐧𝐠𝐞", bedroom:"𖠿・𝐁𝐞𝐝𝐫𝐨𝐨𝐦", kitchen:"𖠿・𝐊𝐢𝐭𝐜𝐡𝐞𝐧", bathroom:"𖠿・𝐁𝐚𝐭𝐡𝐫𝐨𝐨𝐦", room1:"𖠿・𝐒𝐮𝐢𝐭𝐞 𝟎𝟏", room2:"𖠿・𝐒𝐮𝐢𝐭𝐞 𝟎𝟐" };
 const ROOM_EMOJI = { living:"🛋️", bedroom:"🛏️", kitchen:"🍳", room1:"🚪", room2:"🚪", bathroom:"🚿" };
 const HOUSE_GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
 
