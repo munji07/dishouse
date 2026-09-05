@@ -66,6 +66,39 @@ function getInventory(userId) {
     equipped_color: row.equipped_color || "#8b5a2b",
   };
 }
+
+// 후원 랭킹
+try {
+  supportDb?.exec(`CREATE TABLE IF NOT EXISTS donation_ranking (guild_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL)`);
+  supportDb?.exec(`CREATE TABLE IF NOT EXISTS donation_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, amount INTEGER, depositor TEXT, status TEXT, created_at INTEGER, confirmed_at INTEGER)`);
+} catch {}
+async function buildRankingContent() {
+  if (!supportDb) return "DB 오류";
+  const rows = supportDb.prepare(`SELECT user_id, SUM(amount) as total FROM donation_requests WHERE guild_id=? AND status='confirmed' GROUP BY user_id ORDER BY total DESC LIMIT 10`).all(LEVEL_GUILD_ID);
+  if (!rows.length) return "**💛 후원 랭킹 TOP 10**\n\n아직 후원 내역이 없습니다. `/후원하기`로 첫 후원을 남겨보세요!";
+  const lines = rows.map((r, i) => {
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    return `${medal} <@${r.user_id}> — **${Number(r.total).toLocaleString("ko-KR")}원**`;
+  });
+  const total = supportDb.prepare(`SELECT SUM(amount) as s FROM donation_requests WHERE guild_id=? AND status='confirmed'`).get(LEVEL_GUILD_ID)?.s ?? 0;
+  return `**💛 후원 랭킹 TOP 10**\n\n${lines.join("\n")}\n\n—\n**누적 후원** ${Number(total).toLocaleString("ko-KR")}원 · 실시간 업데이트`;
+}
+async function publishRanking(guild) {
+  if (!supportDb || !guild) return;
+  const row = supportDb.prepare("SELECT channel_id, message_id FROM donation_ranking WHERE guild_id=?").get(guild.id);
+  if (!row) return;
+  const content = await buildRankingContent();
+  try {
+    const ch = guild.channels.cache.get(row.channel_id) ?? await guild.channels.fetch(row.channel_id).catch(() => null);
+    if (!ch?.isTextBased()) return;
+    const msg = await ch.messages.fetch(row.message_id).catch(() => null);
+    if (msg) await msg.edit(content);
+    else {
+      const m = await ch.send(content);
+      supportDb.prepare("UPDATE donation_ranking SET message_id=? WHERE guild_id=?").run(m.id, guild.id);
+    }
+  } catch (e) { console.warn("[ranking publish]", e.message); }
+}
 // Simple session decode inline (avoid TS import)
 const COOKIE_NAME = "dishouse_session";
 function decodeSessionInline(val) {
@@ -184,6 +217,28 @@ if (discordToken) {
           const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`donation:complete:${id}`).setLabel("입금 완료 알림 보내기").setStyle(ButtonStyle.Success).setEmoji("✅"));
           return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
+        if (interaction.commandName === "후원랭킹") {
+          const sub = interaction.options.getSubcommand();
+          if (!supportDb) return interaction.reply({ content: "DB 오류.", ephemeral: true });
+          const isAdmin = interaction.user.id === ADMIN_USER_ID || interaction.member?.permissions?.has(PermissionFlagsBits.ManageGuild) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+          if (sub === "조회") {
+            const row = supportDb.prepare("SELECT channel_id FROM donation_ranking WHERE guild_id=?").get(interaction.guildId);
+            return interaction.reply({ content: row ? `현재 랭킹 채널: <#${row.channel_id}>` : "설정된 랭킹 채널이 없습니다.", ephemeral: true });
+          }
+          if (!isAdmin) return interaction.reply({ content: "관리자만 설정할 수 있습니다.", ephemeral: true });
+          if (sub === "제거") {
+            supportDb.prepare("DELETE FROM donation_ranking WHERE guild_id=?").run(interaction.guildId);
+            return interaction.reply({ content: "후원 랭킹 채널을 제거했습니다.", ephemeral: true });
+          }
+          if (sub === "설정") {
+            const channel = interaction.options.getChannel("채널", true);
+            const content = await buildRankingContent();
+            const sent = await channel.send(content).catch(() => null);
+            if (!sent) return interaction.reply({ content: "채널에 메시지를 보낼 수 없습니다.", ephemeral: true });
+            supportDb.prepare("INSERT OR REPLACE INTO donation_ranking (guild_id, channel_id, message_id) VALUES (?,?,?)").run(interaction.guildId, channel.id, sent.id);
+            return interaction.reply({ content: `✅ ${channel} 에 후원 랭킹을 게시했습니다. 후원 확인 시 실시간으로 갱신됩니다.`, ephemeral: true });
+          }
+        }
       }
       if (interaction.isButton()) {
         const [prefix, action, rawId] = interaction.customId.split(":");
@@ -223,6 +278,11 @@ if (discordToken) {
             const user = await discordClient.users.fetch(row.user_id).catch(() => null);
             if (user) await user.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle("✅ 후원 확인 완료").setDescription(`**${Number(row.amount).toLocaleString()}원** 확인! 역할이 지급되었습니다.${err ? `\\n⚠️ ${err}` : ""}`)] }).catch(() => {});
             if (err) await interaction.followUp({ content: `⚠️ 역할 지급 실패: ${err}`, ephemeral: true }).catch(() => {});
+            // 랭킹 실시간 갱신
+            try {
+              const rg = discordClient.guilds.cache.get(DONATION_GUILD_ID) ?? await discordClient.guilds.fetch(DONATION_GUILD_ID).catch(() => null);
+              if (rg) await publishRanking(rg);
+            } catch {}
             return;
           } else {
             supportDb.prepare("UPDATE donation_requests SET status='rejected' WHERE id=?").run(id);
