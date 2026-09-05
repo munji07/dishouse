@@ -20,9 +20,47 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Pretendard, sans-serif;
   background-image:
-    radial-gradient(ellipse at top, #fff7ed 0%, transparent 60%),
-    radial-gradient(ellipse at bottom, #fef3c7 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 10%, #fff7ed 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 85%, #fef3c7 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, #fffbeb 0%, transparent 70%);
+  animation: warmShift 18s ease-in-out infinite alternate;
+}
+
+@keyframes warmShift {
+  0% { background-position: 0% 0%, 100% 100%, 50% 50%; }
+  100% { background-position: 8% 12%, 92% 88%, 52% 48%; }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; filter: brightness(1); }
+  25% { opacity: 0.92; filter: brightness(1.08); }
+  50% { opacity: 0.96; filter: brightness(0.96); }
+  75% { opacity: 0.94; filter: brightness(1.04); }
+}
+
+@keyframes floatSoft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(212,165,116,0.35), 0 0 24px rgba(251,191,36,0.15); }
+  50% { box-shadow: 0 0 18px rgba(212,165,116,0.5), 0 0 32px rgba(251,191,36,0.25); }
+}
+
+@keyframes entrance {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: #d6c7b8; border-radius: 999px; }
+
+.warm-enter { animation: entrance 0.5s ease-out both; }
+.warm-glow { animation: glowPulse 3s ease-in-out infinite; }
+.flicker { animation: flicker 0.9s ease-in-out infinite; }

@@ -14,16 +14,18 @@ export default async function Home() {
   return (
     <div className="flex flex-col min-h-screen">
       {/* roof header */}
-      <header className="sticky top-0 z-20 border-b border-[#e7d5b8] bg-[#fffaf0]/90 backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#8b5a2b] via-[#d4a574] to-[#8b5a2b]" />
+      <header className="sticky top-0 z-20 border-b border-[#e7d5b8] bg-[#fffaf0]/90 backdrop-blur warm-enter">
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#8b5a2b] via-[#d4a574] to-[#8b5a2b] relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent bg-[length:200%_100%] animate-[shimmer_2.5s_ease-in-out_infinite]" />
+        </div>
         <div className="max-w-[960px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#8b5a2b] flex items-center justify-center text-white text-[18px] shadow-sm border border-[#5c3a1a]">🏠</div>
+            <div className="w-9 h-9 rounded-xl bg-[#8b5a2b] flex items-center justify-center text-white text-[18px] shadow-sm border border-[#5c3a1a] warm-glow">🏠</div>
             <div>
               <div className="font-black tracking-tight leading-none text-[#2d1b0e]">DISHOUSE</div>
-              <div className="text-[11px] tracking-widest text-[#8b5a2b] font-medium -mt-0.5">디스하우스 · 집으로 들어오세요</div>
+              <div className="text-[11px] tracking-widest text-[#8b5a2b] font-medium -mt-0.5">디스하우스 · 따뜻한 집</div>
             </div>
-            <span className="hidden sm:inline-flex ml-2 px-2 py-0.5 rounded-full bg-[#fef3c7] border border-[#f5d49a] text-[11px] font-bold text-[#92400e]">🏡 2D HOUSE</span>
+            <span className="hidden sm:inline-flex ml-2 px-2 py-0.5 rounded-full bg-[#fef3c7] border border-[#f5d49a] text-[11px] font-bold text-[#92400e] animate-[floatSoft_3s_ease-in-out_infinite]">✨ 따뜻한 집</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             {me ? (

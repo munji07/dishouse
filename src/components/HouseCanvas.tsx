@@ -160,8 +160,16 @@ export default function HouseCanvas({
     const ctx = c.getContext("2d")!;
     let raf = 0;
     const draw = () => {
-      // warm paper
+      const t = Date.now() / 1000;
+      const flicker = 0.92 + Math.sin(t * 4.2) * 0.06 + Math.sin(t * 7.1) * 0.02;
+      // warm paper with subtle vignette
       ctx.fillStyle = "#f5ece0";
+      ctx.fillRect(0, 0, c.width, c.height);
+      // warm ambient glow top
+      const grad = ctx.createRadialGradient(MAP.width * 0.5, 80, 0, MAP.width * 0.5, 80, 520);
+      grad.addColorStop(0, `rgba(253,230,138,${0.18 * flicker})`);
+      grad.addColorStop(1, "rgba(245,236,224,0)");
+      ctx.fillStyle = grad;
       ctx.fillRect(0, 0, c.width, c.height);
 
       // rooms with floor planks + rugs
@@ -181,6 +189,26 @@ export default function HouseCanvas({
         drawFurniture(ctx, r);
         // room label pill
         drawRoomLabel(ctx, r);
+      }
+
+      // fireplace warm glow (living)
+      ctx.save();
+      ctx.globalAlpha = 0.22 * flicker;
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath(); ctx.ellipse(58, 58, 26, 16, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.13 * flicker;
+      ctx.beginPath(); ctx.ellipse(58, 58, 44, 26, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.globalAlpha = 0.9 * flicker;
+      ctx.font = "18px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("🔥", 58, 64);
+      ctx.globalAlpha = 1;
+      // dust particles (warm)
+      ctx.fillStyle = "rgba(139,90,43,0.08)";
+      for (let i = 0; i < 3; i++) {
+        const px = (Math.sin(t * 0.3 + i * 2.1) * 8 + MAP.width * (0.25 + i * 0.22)) % MAP.width;
+        const py = (t * 6 + i * 90) % MAP.height;
+        ctx.beginPath(); ctx.arc(px, py, 1.2, 0, Math.PI * 2); ctx.fill();
       }
 
       // outer thick house wall
@@ -222,32 +250,43 @@ export default function HouseCanvas({
         ctx.beginPath(); ctx.arc(targetRef.current.x, targetRef.current.y, 6, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = "#8b5a2b"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(targetRef.current.x, targetRef.current.y, 6, 0, Math.PI*2); ctx.stroke();
       }
-      // players (others dim if different room)
+      // players (others dim if different room) with soft bob
       for (const o of others) {
         const same = o.room === room;
         const skin = othersSkins[o.id] ?? { hat: "none", color: "#6b7280" };
+        const bob = Math.sin(t * 2.0 + o.pos.x * 0.02) * 1.1;
+        const p = { x: o.pos.x, y: o.pos.y + bob };
         ctx.globalAlpha = same ? 1 : 0.32;
-        drawCharacter(ctx, o.pos, o.name, otherImgs.current.get(o.id) ?? null, same, false, skin);
+        drawCharacter(ctx, p, o.name, otherImgs.current.get(o.id) ?? null, same, false, skin);
         const b = bubbles.find((bb) => bb.userId === o.id);
-        if (b) drawBubble(ctx, o.pos, b.content);
+        if (b) drawBubble(ctx, p, b.content);
         ctx.globalAlpha = 1;
       }
-      // me
-      drawCharacter(ctx, posRef.current, me?.displayName ?? "게스트", avatarImgRef.current, true, true, equipped);
+      // me with bob
+      const myBob = Math.sin(t * 2.2) * 1.0;
+      const myPos = { x: posRef.current.x, y: posRef.current.y + myBob };
+      drawCharacter(ctx, myPos, me?.displayName ?? "게스트", avatarImgRef.current, true, true, equipped);
       let ownB: Bubble | undefined;
       if (bubbles.length) {
         const unmatched = bubbles.filter((b) => !others.some((o) => o.id === b.userId));
         if (unmatched.length) ownB = unmatched[0];
       }
       const myBubble = bubbles.find((b) => b.displayName === me?.displayName);
-      if (myBubble) drawBubble(ctx, posRef.current, myBubble.content);
-      else if (ownB) drawBubble(ctx, posRef.current, ownB.content);
+      if (myBubble) drawBubble(ctx, myPos, myBubble.content);
+      else if (ownB) drawBubble(ctx, myPos, ownB.content);
 
       // hint
       ctx.fillStyle = "rgba(45,27,14,0.55)";
       ctx.font = "10px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("WASD / 방향키 · 문을 지나 방 이동", MAP.width / 2, MAP.height - 10);
+      ctx.fillText("WASD / 방향키 · 클릭으로 이동 · 문을 지나 방 이동", MAP.width / 2, MAP.height - 10);
+
+      // warm vignette
+      const vig = ctx.createRadialGradient(MAP.width/2, MAP.height/2, MAP.width*0.35, MAP.width/2, MAP.height/2, MAP.width*0.7);
+      vig.addColorStop(0, "rgba(0,0,0,0)");
+      vig.addColorStop(1, "rgba(60,30,10,0.07)");
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, MAP.width, MAP.height);
 
       raf = requestAnimationFrame(draw);
     };

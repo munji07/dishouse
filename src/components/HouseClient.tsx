@@ -87,7 +87,7 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
   return (
     <div className="flex flex-col gap-4">
       {/* presence bar — house style */}
-      <div className="rounded-2xl border border-[#e7d5b8] bg-white/90 backdrop-blur p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+      <div className="rounded-2xl border border-[#e7d5b8] bg-white/90 backdrop-blur p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-sm warm-enter">
         <div className="flex items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black border ${connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-zinc-100 text-zinc-500"}`}>
             <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"}`} /> {connected ? "집 안" : "연결 중…"}
@@ -109,7 +109,7 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
       </div>
 
       {/* house frame */}
-      <div className="rounded-[24px] border-[6px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_32px_rgba(60,30,10,0.25),0_2px_8px_rgba(0,0,0,0.15)] overflow-hidden">
+      <div className="rounded-[24px] border-[6px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_32px_rgba(60,30,10,0.25),0_2px_8px_rgba(0,0,0,0.15)] overflow-hidden warm-enter" style={{ animationDelay: "80ms" }}>
         <div className="bg-[#fdf8f0] rounded-[16px] overflow-hidden">
           <div className="h-7 bg-gradient-to-b from-[#8b5a2b] to-[#6b3d1a] flex items-center justify-between px-3">
             <div className="flex gap-1.5">
@@ -127,8 +127,8 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
       </div>
 
       {/* shop — coin + skin */}
-      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-sm overflow-hidden">
-        <button onClick={() => setShowShop(!showShop)} className="w-full h-10 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3 hover:bg-[#fef3c7]">
+      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-sm overflow-hidden warm-enter" style={{ animationDelay: "160ms" }}>
+        <button onClick={() => setShowShop(!showShop)} className="w-full h-10 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3 hover:bg-[#fef3c7] transition-colors">
           <span className="text-sm font-black text-[#2d1b0e] flex items-center gap-2">🎨 캐릭터 꾸미기 {shop && <span className="px-2 py-0.5 rounded-full bg-[#2d1b0e] text-white text-xs">💰 {shop.coins.toLocaleString()} 코인</span>}</span>
           <span className="text-xs text-[#8b6a4a]">{showShop ? "▲ 닫기" : "▼ 열기"} · 03 채팅 코인 사용</span>
         </button>
@@ -181,7 +181,7 @@ export default function HouseClient({ me }: { me: { displayName: string; avatarU
       </div>
 
       {/* chat — cozy */}
-      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-sm overflow-hidden">
+      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-sm overflow-hidden warm-enter" style={{ animationDelay: "240ms" }}>
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3">
           <div className="text-sm font-black text-[#2d1b0e] flex items-center gap-1.5">
             <span className="w-6 h-6 rounded-full bg-[#8b5a2b] text-white flex items-center justify-center text-xs">{curMeta?.emoji}</span>
