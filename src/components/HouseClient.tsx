@@ -201,7 +201,7 @@ export default function HouseClient({
 
             {/* Room-by-room Occupancy Popover (Section 17) */}
             {showPresenceList && (
-              <div className="absolute right-0 top-full mt-2 z-40 w-52 bg-[#fffaf0] border-2 border-[#8b5a2b] rounded-2xl p-3 shadow-xl warm-enter">
+              <div className="absolute right-0 top-full mt-2 z-[100] w-52 bg-[#fffaf0] border-2 border-[#8b5a2b] rounded-2xl p-3 shadow-xl warm-enter">
                 <div className="text-[11px] font-black text-[#8b5a2b] mb-2 px-1 flex items-center justify-between">
                   <span>방별 접속자 현황</span>
                   <span className="text-[10px] text-[#8b6a4a]">클릭 시 이동</span>
