@@ -4,7 +4,7 @@ import { createServer } from "http";
 import next from "next";
 import { Server } from "socket.io";
 import pg from "pg";
-import { Client, GatewayIntentBits, Events } from "discord.js";
+import { Client, GatewayIntentBits, Events, PermissionFlagsBits } from "discord.js";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -141,8 +141,100 @@ if (discordToken) {
     io.to(`room:${roomId}`).emit("bubble", { roomId, userId: msg.author.id, content: msg.content.slice(0, 80) });
   });
 
-  // slash commands moved to 03_support-bot (guild 1538513625730383902) — keep 04 for chat bridge only
-  // InteractionCreate disabled to avoid duplicate handling with support-bot (same token)
+  // slash commands — now handled here (support-bot off, same token unified)
+  const ADMIN_USER_ID = "1269575955626725390";
+  const DONATION_GUILD_ID = "1538513625730383902";
+  const DONATION_ROLE_ID = "1545582928233242724";
+  discordClient.on(Events.InteractionCreate, async (interaction) => {
+    try {
+      if (interaction.isChatInputCommand()) {
+        // DISHOUSE 방 채널
+        if (["채널지정", "채널정보", "채널초기화"].includes(interaction.commandName)) {
+          if (interaction.guildId !== "1538513625730383902") return interaction.reply({ content: "이 명령어는 지정된 서버에서만 사용할 수 있습니다.", ephemeral: true });
+          const isAdmin = interaction.user.id === ADMIN_USER_ID || interaction.member?.permissions?.has(PermissionFlagsBits.ManageGuild) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+          if (!isAdmin) return interaction.reply({ content: "권한이 없습니다. (서버 관리 권한 필요)", ephemeral: true });
+          if (interaction.commandName === "채널지정") {
+            const roomId = interaction.options.getString("방", true);
+            const channel = interaction.options.getChannel("채널", true);
+            await pool.query("UPDATE rooms SET channel_id=$1, updated_at=now() WHERE id=$2", [channel.id, roomId]);
+            return interaction.reply({ content: `✅ ${ROOM_EMOJI[roomId] ?? ""} **${ROOM_LABEL[roomId] ?? roomId}** → <#${channel.id}> 연결 완료`, ephemeral: true });
+          }
+          if (interaction.commandName === "채널정보") {
+            const { rows } = await pool.query("SELECT id, channel_id FROM rooms ORDER BY id");
+            const lines = rows.map((r) => `${ROOM_EMOJI[r.id] ?? "·"} ${ROOM_LABEL[r.id] ?? r.id} → ${r.channel_id ? `<#${r.channel_id}>` : "\`미연결\`"}`);
+            return interaction.reply({ content: `🏠 **DISHOUSE 방 채널 설정**\n${lines.join("\n")}`, ephemeral: true });
+          }
+          if (interaction.commandName === "채널초기화") {
+            const roomId = interaction.options.getString("방", true);
+            await pool.query("UPDATE rooms SET channel_id=NULL, updated_at=now() WHERE id=$1", [roomId]);
+            return interaction.reply({ content: `🗑️ ${ROOM_LABEL[roomId] ?? roomId} 연결 해제 완료`, ephemeral: true });
+          }
+        }
+        if (interaction.commandName === "후원하기") {
+          const amount = interaction.options.getInteger("금액", true);
+          const depositor = interaction.options.getString("입금자명", true).trim().slice(0, 30);
+          if (amount < 1000) return interaction.reply({ content: "최소 후원 금액은 1,000원입니다.", ephemeral: true });
+          if (!supportDb) return interaction.reply({ content: "DB 오류.", ephemeral: true });
+          // ensure table
+          try { supportDb.exec(`CREATE TABLE IF NOT EXISTS donation_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, amount INTEGER, depositor TEXT, status TEXT, created_at INTEGER, confirmed_at INTEGER)`); } catch {}
+          const res = supportDb.prepare("INSERT INTO donation_requests (guild_id, user_id, amount, depositor, status, created_at) VALUES (?,?,?,?,?,?)").run(interaction.guildId, interaction.user.id, amount, depositor, "pending", Date.now());
+          const id = res.lastInsertRowid;
+          const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import("discord.js");
+          const embed = new EmbedBuilder().setColor(0xffc857).setTitle("💛 DISHOUSE 후원 안내").setDescription("아래 계좌로 입금 후 **입금 완료** 버튼을 눌러주세요. 제작자 확인 후 역할이 지급됩니다.").addFields({ name: "💳 계좌번호", value: "**3333-37-9030802**", inline: false }, { name: "🏦 은행", value: "카카오뱅크", inline: true }, { name: "👤 예금주", value: "전민재", inline: true }, { name: "💰 금액", value: `**${amount.toLocaleString("ko-KR")}원**`, inline: true }, { name: "📝 입금자명", value: `**${depositor}**`, inline: true }, { name: "🆔 요청 ID", value: `\`${id}\``, inline: true }).setFooter({ text: "문의: 제작자 DM · 복사: 3333-37-9030802" }).setTimestamp();
+          const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`donation:complete:${id}`).setLabel("입금 완료 알림 보내기").setStyle(ButtonStyle.Success).setEmoji("✅"));
+          return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+        }
+      }
+      if (interaction.isButton()) {
+        const [prefix, action, rawId] = interaction.customId.split(":");
+        if (prefix !== "donation") return;
+        const id = Number(rawId);
+        if (action === "complete") {
+          const row = supportDb.prepare("SELECT * FROM donation_requests WHERE id=?").get(id);
+          if (!row || row.user_id !== interaction.user.id) return interaction.reply({ content: "본인의 요청만 처리할 수 있습니다.", ephemeral: true });
+          if (row.status !== "pending") return interaction.reply({ content: "이미 처리된 요청입니다.", ephemeral: true });
+          supportDb.prepare("UPDATE donation_requests SET status='awaiting' WHERE id=?").run(id);
+          await interaction.update({ content: "입금 완료 알림을 전송했습니다. 제작자 확인 후 역할이 지급됩니다.", embeds: [], components: [] });
+          const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import("discord.js");
+          const embed = new EmbedBuilder().setColor(0xffc857).setTitle("💰 후원 확인 요청").setDescription(`<@${row.user_id}> 님이 후원을 신청했습니다.`).addFields({ name: "금액", value: `${Number(row.amount).toLocaleString("ko-KR")}원`, inline: true }, { name: "입금자명", value: row.depositor, inline: true }, { name: "요청 ID", value: String(id), inline: true }).setTimestamp();
+          const btnRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`donation:confirm:${id}`).setLabel("✅ 확인 (역할 지급)").setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`donation:reject:${id}`).setLabel("❌ 거절").setStyle(ButtonStyle.Danger));
+          const adminUser = await discordClient.users.fetch(ADMIN_USER_ID).catch(() => null);
+          if (adminUser) await adminUser.send({ embeds: [embed], components: [btnRow] }).catch(() => {});
+          return;
+        }
+        if (action === "confirm" || action === "reject") {
+          if (interaction.user.id !== ADMIN_USER_ID) return interaction.reply({ content: "제작자만 확인할 수 있습니다.", ephemeral: true });
+          const row = supportDb.prepare("SELECT * FROM donation_requests WHERE id=?").get(id);
+          if (!row) return interaction.reply({ content: "요청을 찾을 수 없습니다.", ephemeral: true });
+          if (row.status === "confirmed" || row.status === "rejected") return interaction.reply({ content: "이미 처리됨.", ephemeral: true });
+          const { EmbedBuilder } = await import("discord.js");
+          if (action === "confirm") {
+            supportDb.prepare("UPDATE donation_requests SET status='confirmed', confirmed_at=? WHERE id=?").run(Date.now(), id);
+            const guild = discordClient.guilds.cache.get(DONATION_GUILD_ID) ?? await discordClient.guilds.fetch(DONATION_GUILD_ID).catch(() => null);
+            let err = null;
+            if (guild) {
+              const member = await guild.members.fetch(row.user_id).catch(() => null);
+              const role = guild.roles.cache.get(DONATION_ROLE_ID) ?? await guild.roles.fetch(DONATION_ROLE_ID).catch(() => null);
+              if (!member) err = "유저를 찾을 수 없습니다.";
+              else if (!role) err = "역할을 찾을 수 없습니다.";
+              else try { await member.roles.add(role); } catch (e) { err = e.message; }
+            } else err = "서버를 찾을 수 없습니다.";
+            await interaction.update({ content: `후원 확인 완료 — <@${row.user_id}> ${Number(row.amount).toLocaleString()}원`, embeds: [], components: [] });
+            const user = await discordClient.users.fetch(row.user_id).catch(() => null);
+            if (user) await user.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle("✅ 후원 확인 완료").setDescription(`**${Number(row.amount).toLocaleString()}원** 확인! 역할이 지급되었습니다.${err ? `\\n⚠️ ${err}` : ""}`)] }).catch(() => {});
+            if (err) await interaction.followUp({ content: `⚠️ 역할 지급 실패: ${err}`, ephemeral: true }).catch(() => {});
+            return;
+          } else {
+            supportDb.prepare("UPDATE donation_requests SET status='rejected' WHERE id=?").run(id);
+            await interaction.update({ content: `후원 #${id} 거절됨`, embeds: [], components: [] });
+            const user = await discordClient.users.fetch(row.user_id).catch(() => null);
+            if (user) await user.send({ embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("❌ 후원 거절").setDescription("거절되었습니다. 문의는 제작자에게.")] }).catch(() => {});
+            return;
+          }
+        }
+      }
+    } catch (e) { console.error("[interaction]", e); if (!interaction.replied) await interaction.reply({ content: `오류: ${String(e.message ?? e)}`, ephemeral: true }).catch(() => {}); }
+  });
 
   discordClient.login(discordToken).catch(e => console.error("[discord login]", e));
 } else {
