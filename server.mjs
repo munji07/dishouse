@@ -277,9 +277,10 @@ async function createHouseForUser(guild, ownerId, displayName) {
     { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: owner.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
   ];
-  const category = existing?.category_id
+  const existingCategory = existing?.category_id
     ? await guild.channels.fetch(existing.category_id).catch(()=>null)
-    : await guild.channels.create({ name: houseName, type: 4, permissionOverwrites: overwrites });
+    : null;
+  const category = existingCategory ?? await guild.channels.create({ name: houseName, type: 4, permissionOverwrites: overwrites });
   if (!category) throw new Error("개인 집 카테고리를 만들 수 없습니다.");
 
   const roomRows = [];
@@ -366,6 +367,21 @@ async function getChannelByRoom(roomId) {
 // Discord Bot
 const discordToken = process.env.DISCORD_TOKEN;
 let discordClient = null;
+async function getHouseGuild() {
+  if (!discordClient) throw new Error("Discord 봇이 설정되지 않았습니다. DISCORD_TOKEN을 확인해 주세요.");
+  if (!discordClient.isReady()) {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Discord 봇이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.")), 15000);
+      discordClient.once(Events.ClientReady, () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  }
+  const guild = discordClient.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient.guilds.fetch(HOUSE_GUILD_ID).catch(() => null);
+  if (!guild) throw new Error("Discord 서버를 찾을 수 없습니다. 봇이 해당 서버에 들어와 있는지 확인해 주세요.");
+  return guild;
+}
 if (discordToken) {
   discordClient = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
@@ -687,8 +703,7 @@ io.on("connection", async (socket) => {
   socket.on("house:create", async () => {
     if (isGuest) return socket.emit("house:error", { message: "로그인 후 집을 만들 수 있어요." });
     try {
-      const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
-      if (!guild) return socket.emit("house:error", { message: "Discord 서버를 찾을 수 없습니다." });
+      const guild = await getHouseGuild();
       const house = await createHouseForUser(guild, userId, displayName);
       io.emit("house:created", { id: house.id, ownerId: house.owner_id, ownerName: house.owner_name, floor: house.floor, channelId: house.channel_id, channelName: house.channel_name, visibility: house.visibility });
       socket.emit("house:created", { id: house.id, ownerId: house.owner_id, ownerName: house.owner_name, floor: house.floor, channelId: house.channel_id, channelName: house.channel_name, visibility: house.visibility });
