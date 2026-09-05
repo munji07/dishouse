@@ -261,6 +261,8 @@ async function getOrCreateHouseCategory(guild) {
 }
 async function createHouseForUser(guild, ownerId, displayName) {
   await ensureHouseTables();
+  const owner = await guild.members.fetch(String(ownerId)).catch(() => null);
+  if (!owner) throw new Error("개인 방을 만들려면 해당 Discord 서버에 가입되어 있어야 합니다.");
   const existing = await getHouseByOwner(guild.id, ownerId);
   if (existing?.channel_id) {
     const ch = await guild.channels.fetch(existing.channel_id).catch(()=>null);
@@ -269,12 +271,12 @@ async function createHouseForUser(guild, ownerId, displayName) {
   let floor, ch;
   if (existing && !existing.channel_id) {
     floor = existing.floor;
-    ch = await guild.channels.create({ name: formatHouseChannelName(floor, displayName), type: 0, parent: (await getOrCreateHouseCategory(guild))?.id ?? null, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: ownerId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] });
+    ch = await guild.channels.create({ name: formatHouseChannelName(floor, displayName), type: 0, parent: (await getOrCreateHouseCategory(guild))?.id ?? null, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: owner, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] });
     await pool.query(`UPDATE dishouse_houses SET channel_id=$1, channel_name=$2, owner_name=$3, updated_at=now() WHERE id=$4`, [ch.id, ch.name, displayName, existing.id]);
     return { ...existing, channel_id: ch.id, channel_name: ch.name };
   }
   floor = await getNextHouseFloor(guild.id);
-  ch = await guild.channels.create({ name: formatHouseChannelName(floor, displayName), type: 0, parent: (await getOrCreateHouseCategory(guild))?.id ?? null, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: ownerId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] });
+  ch = await guild.channels.create({ name: formatHouseChannelName(floor, displayName), type: 0, parent: (await getOrCreateHouseCategory(guild))?.id ?? null, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: owner, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] });
   const { rows } = await pool.query(`INSERT INTO dishouse_houses (guild_id, owner_id, owner_name, floor, channel_id, channel_name, visibility) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (guild_id, owner_id) DO UPDATE SET channel_id=EXCLUDED.channel_id, channel_name=EXCLUDED.channel_name, owner_name=EXCLUDED.owner_name, updated_at=now() RETURNING *`, [guild.id, ownerId, displayName, floor, ch.id, ch.name, 'invite_only']);
   return rows[0];
 }
