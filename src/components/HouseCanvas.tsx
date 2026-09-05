@@ -46,6 +46,58 @@ export const DOORS: { id: string; x: number; y: number; w: number; h: number }[]
   { id: "room1-room2", x: 594, y: 330, w: 12, h: 48 },
 ];
 
+// 벽 충돌용 실체 벽 (문 구멍 제외). 두께 4px, 캐릭터 반경 12px
+export const SOLID_WALLS: { x1: number; y1: number; x2: number; y2: number }[] = [
+  // 세로벽
+  { x1: 354, y1: 28, x2: 354, y2: 72 },   // A1
+  { x1: 354, y1: 120, x2: 354, y2: 190 },  // A2
+  { x1: 624, y1: 28, x2: 624, y2: 72 },   // B1
+  { x1: 624, y1: 120, x2: 624, y2: 190 },  // B2
+  { x1: 290, y1: 190, x2: 290, y2: 215 },  // C1
+  { x1: 290, y1: 263, x2: 290, y2: 290 },  // C2
+  { x1: 290, y1: 310, x2: 290, y2: 390 },  // D1
+  { x1: 290, y1: 438, x2: 290, y2: 572 },  // D2
+  { x1: 588, y1: 190, x2: 588, y2: 330 },  // E1
+  { x1: 588, y1: 378, x2: 588, y2: 572 },  // E2
+  // 가로벽
+  { x1: 28, y1: 290, x2: 96, y2: 290 },    // F1
+  { x1: 144, y1: 290, x2: 290, y2: 290 },   // F2
+  { x1: 354, y1: 190, x2: 624, y2: 190 },   // G
+];
+
+const PLAYER_RADIUS = 12;
+const WALL_HALF = 2;
+const COLLISION_DIST = PLAYER_RADIUS + WALL_HALF + 1;
+
+function distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
+  const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * (x2 - x1);
+  const cy = y1 + t * (y2 - y1);
+  return Math.hypot(px - cx, py - cy);
+}
+
+export function isCollidingWithWall(x: number, y: number) {
+  for (const w of SOLID_WALLS) {
+    if (distToSegment(x, y, w.x1, w.y1, w.x2, w.y2) < COLLISION_DIST) return true;
+  }
+  return false;
+}
+
+export function canMoveTo(x: number, y: number) {
+  // 맵 바깥 차단
+  if (x < 22 + PLAYER_RADIUS || x > 878 - PLAYER_RADIUS || y < 22 + PLAYER_RADIUS || y > 578 - PLAYER_RADIUS) return false;
+  // 벽 충돌
+  if (isCollidingWithWall(x, y)) return false;
+  // 방 내부 또는 문 근처만 허용 (정원 등 외부 차단)
+  const inside = MAP.rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+  if (inside) return true;
+  const nearDoor = DOORS.some((d) => x >= d.x - 6 && x < d.x + d.w + 6 && y >= d.y - 6 && y < d.y + d.h + 6);
+  return nearDoor;
+}
+
 export function getRoomId(pos: Pos) {
   for (const r of MAP.rooms) {
     if (pos.x >= r.x && pos.x < r.x + r.w && pos.y >= r.y && pos.y < r.y + r.h) return r.id;
@@ -220,14 +272,29 @@ export default function HouseCanvas({
 
         const nx = Math.max(36, Math.min(MAP.width - 36, posRef.current.x + dx));
         const ny = Math.max(36, Math.min(MAP.height - 36, posRef.current.y + dy));
-        const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
-        const nearDoor = DOORS.some(
-          (d) => nx >= d.x - 8 && nx < d.x + d.w + 8 && ny >= d.y - 8 && ny < d.y + d.h + 8
-        );
-        if (inside || nearDoor) {
+        if (canMoveTo(nx, ny)) {
           posRef.current.x = nx;
           posRef.current.y = ny;
           moving = true;
+        } else {
+          // 벽에 대각선으로 부딪히면 축별로 슬라이딩
+          const canX = canMoveTo(nx, posRef.current.y);
+          const canY = canMoveTo(posRef.current.x, ny);
+          if (canX && !canY) {
+            posRef.current.x = nx;
+            moving = true;
+          } else if (!canX && canY) {
+            posRef.current.y = ny;
+            moving = true;
+          } else if (canX && canY) {
+            // 둘 다 가능하면 더 큰 이동축 우선
+            if (Math.abs(dx) > Math.abs(dy)) {
+              posRef.current.x = nx;
+            } else {
+              posRef.current.y = ny;
+            }
+            moving = true;
+          }
         }
       } else if (targetRef.current) {
         const tx = targetRef.current.x;
@@ -248,11 +315,7 @@ export default function HouseCanvas({
           const step = Math.min(2.6, dist);
           const nx = posRef.current.x + (vx / dist) * step;
           const ny = posRef.current.y + (vy / dist) * step;
-          const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
-          const nearDoor = DOORS.some(
-            (d) => nx >= d.x - 8 && nx < d.x + d.w + 8 && ny >= d.y - 8 && ny < d.y + d.h + 8
-          );
-          if (inside || nearDoor) {
+          if (canMoveTo(nx, ny)) {
             posRef.current.x = nx;
             posRef.current.y = ny;
             moving = true;
@@ -438,14 +501,20 @@ export default function HouseCanvas({
     }
     const nx = Math.max(36, Math.min(MAP.width - 36, posRef.current.x + dx));
     const ny = Math.max(36, Math.min(MAP.height - 36, posRef.current.y + dy));
-    const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
-    const nearDoor = DOORS.some(
-      (d) => nx >= d.x - 8 && nx < d.x + d.w + 8 && ny >= d.y - 8 && ny < d.y + d.h + 8
-    );
-    if (inside || nearDoor) {
+    if (canMoveTo(nx, ny)) {
       posRef.current.x = nx;
       posRef.current.y = ny;
       walkCycleRef.current += 0.3;
+    } else {
+      const canX = canMoveTo(nx, posRef.current.y);
+      const canY = canMoveTo(posRef.current.x, ny);
+      if (canX && !canY) {
+        posRef.current.x = nx;
+        walkCycleRef.current += 0.3;
+      } else if (!canX && canY) {
+        posRef.current.y = ny;
+        walkCycleRef.current += 0.3;
+      }
     }
     const nr = getRoomId(posRef.current);
     if (nr !== room) setRoom(nr);
