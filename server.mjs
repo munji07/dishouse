@@ -11,22 +11,48 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const supportDbPath = path.join(__dirname, "..", "03_support-bot", "progress.db");
+const candidatePaths = [
+  process.env.SUPPORT_DB_PATH,
+  path.join(__dirname, "..", "03_support-bot", "progress.db"),
+  path.join(__dirname, "progress.db"),
+  path.join(process.cwd(), "..", "03_support-bot", "progress.db"),
+  path.join(process.cwd(), "progress.db"),
+].filter(Boolean);
 let supportDb = null;
-try {
-  supportDb = new Database(supportDbPath, { readonly: false });
-  supportDb.pragma("journal_mode = WAL");
-  supportDb.exec(`CREATE TABLE IF NOT EXISTS dishouse_inventory (
-    guild_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    owned_hats TEXT NOT NULL DEFAULT '[]',
-    owned_colors TEXT NOT NULL DEFAULT '[]',
-    equipped_hat TEXT NOT NULL DEFAULT 'none',
-    equipped_color TEXT NOT NULL DEFAULT '#8b5a2b',
-    PRIMARY KEY (guild_id, user_id)
-  )`);
-  console.log(`[shop] support DB at ${supportDbPath}`);
-} catch (e) { console.warn("[shop] no support DB", e.message); }
+let supportDbPath = candidatePaths[0];
+for (const p of candidatePaths) {
+  try {
+    const testDb = new Database(p, { readonly: false });
+    testDb.pragma("journal_mode = WAL");
+    testDb.exec(`CREATE TABLE IF NOT EXISTS dishouse_inventory (
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      owned_hats TEXT NOT NULL DEFAULT '[]',
+      owned_colors TEXT NOT NULL DEFAULT '[]',
+      equipped_hat TEXT NOT NULL DEFAULT 'none',
+      equipped_color TEXT NOT NULL DEFAULT '#8b5a2b',
+      PRIMARY KEY (guild_id, user_id)
+    )`);
+    testDb.exec(`CREATE TABLE IF NOT EXISTS user_progress (
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      xp INTEGER NOT NULL DEFAULT 0,
+      coins INTEGER NOT NULL DEFAULT 0,
+      level INTEGER NOT NULL DEFAULT 1,
+      messages INTEGER NOT NULL DEFAULT 0,
+      last_message_at INTEGER NOT NULL DEFAULT 0,
+      last_nickname_change_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (guild_id, user_id)
+    )`);
+    supportDb = testDb;
+    supportDbPath = p;
+    console.log(`[shop] support DB at ${supportDbPath} (candidates tried: ${candidatePaths.join(", ")})`);
+    break;
+  } catch (e) {
+    console.warn(`[shop] failed to open ${p}:`, e.message);
+  }
+}
+if (!supportDb) console.warn("[shop] no support DB — coins will be 0, checked:", candidatePaths.join(", "));
 
 const HATS = [
   { id: "none", price: 0 },
@@ -46,11 +72,17 @@ const COLORS = [
 const LEVEL_GUILD_ID = "1538513625730383902";
 
 function getCoins(userId) {
-  if (!supportDb) return 0;
+  if (!supportDb) {
+    console.warn("[coins] no supportDb for", userId);
+    return 0;
+  }
   try {
     const row = supportDb.prepare("SELECT coins FROM user_progress WHERE guild_id=? AND user_id=?").get(LEVEL_GUILD_ID, userId);
     return Number(row?.coins ?? 0);
-  } catch { return 0; }
+  } catch (e) {
+    console.warn("[coins] query failed", e.message);
+    return 0;
+  }
 }
 function getInventory(userId) {
   if (!supportDb) return { owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#8b5a2b" };

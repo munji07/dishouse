@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ROOMS } from "@/lib/constants";
 import HouseCanvas, { type OtherPlayer, type Bubble, type TimeMode } from "./HouseCanvas";
@@ -46,6 +46,10 @@ export default function HouseClient({
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [timeMode, setTimeMode] = useState<TimeMode>("auto");
 
+  const meId = me?.discordId ?? null;
+  const currentRoomRef = useRef(currentRoom);
+  useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
+
   useEffect(() => {
     const s = io({ withCredentials: true });
     setSocket(s);
@@ -56,7 +60,7 @@ export default function HouseClient({
     s.on("presence", (p) => setPresence(p));
 
     s.on("playerMove", ({ userId, displayName, avatarUrl, pos, roomId, skin }) => {
-      if (me && userId === me.discordId) return;
+      if (meId && userId === meId) return;
       setOthers((prev) => ({ ...prev, [userId]: { id: userId, name: displayName, avatarUrl, pos, room: roomId } }));
       if (skin) setOthersSkins((p) => ({ ...p, [userId]: skin }));
     });
@@ -82,7 +86,7 @@ export default function HouseClient({
     });
 
     s.on("chat", (msg: ChatMsg) => {
-      if (msg.roomId !== currentRoom) return;
+      if (msg.roomId !== currentRoomRef.current) return;
       setChats((prev) => [...prev.slice(-49), msg]);
     });
 
@@ -102,7 +106,10 @@ export default function HouseClient({
     });
 
     s.on("chatError", ({ message }) => setError(message));
-    s.on("shop:state", (st) => setShop(st));
+    s.on("shop:state", (st) => {
+      console.log("[shop:state]", st);
+      setShop(st);
+    });
     s.on("shop:ok", ({ message }) => {
       setShopMsg(message);
       setTimeout(() => setShopMsg(null), 2500);
@@ -116,7 +123,7 @@ export default function HouseClient({
     return () => {
       s.disconnect();
     };
-  }, [me, currentRoom]);
+  }, [meId]);
 
   useEffect(() => {
     if (!socket) return;
