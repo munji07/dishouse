@@ -6,7 +6,7 @@ export function getPool() {
   if (pool) return pool;
   const conn = process.env.DATABASE_URL;
   if (!conn) throw new Error("DATABASE_URL not set");
-  const cleaned = conn.replace(/[?&]sslmode=[^&]+/, "");
+  const cleaned = conn.replace(/[?&]sslmode=[^&]+/g, "").replace(/[?&]channel_binding=[^&]+/g, "");
   pool = new Pool({
     connectionString: cleaned,
     ssl: { rejectUnauthorized: false },

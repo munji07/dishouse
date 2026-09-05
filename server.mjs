@@ -11,6 +11,16 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// PG — 코인/XP 단일 소스 (support-bot과 공유). SQLite는 fallback/기부용만 유지.
+const rawDbEarly = process.env.DATABASE_URL || "";
+const cleanedDbEarly = rawDbEarly.replace(/[?&]sslmode=[^&]+/g, "").replace(/[?&]channel_binding=[^&]+/g, "");
+const pgPool = rawDbEarly ? new pg.Pool({ connectionString: cleanedDbEarly, ssl: { rejectUnauthorized: false } }) : null;
+if (pgPool) {
+  pgPool.query(`CREATE TABLE IF NOT EXISTS user_progress (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, xp INTEGER NOT NULL DEFAULT 0, coins INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1, messages INTEGER NOT NULL DEFAULT 0, last_message_at BIGINT NOT NULL DEFAULT 0, last_nickname_change_at BIGINT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (guild_id, user_id))`).catch(()=>{});
+  pgPool.query(`CREATE TABLE IF NOT EXISTS dishouse_inventory (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, owned_hats TEXT NOT NULL DEFAULT '[]', owned_colors TEXT NOT NULL DEFAULT '[]', equipped_hat TEXT NOT NULL DEFAULT 'none', equipped_color TEXT NOT NULL DEFAULT '#8b5a2b', created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (guild_id, user_id))`).catch(()=>{});
+}
+
 const candidatePaths = [
   process.env.SUPPORT_DB_PATH,
   path.join(__dirname, "..", "03_support-bot", "progress.db"),
@@ -24,35 +34,18 @@ for (const p of candidatePaths) {
   try {
     const testDb = new Database(p, { readonly: false });
     testDb.pragma("journal_mode = WAL");
-    testDb.exec(`CREATE TABLE IF NOT EXISTS dishouse_inventory (
-      guild_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      owned_hats TEXT NOT NULL DEFAULT '[]',
-      owned_colors TEXT NOT NULL DEFAULT '[]',
-      equipped_hat TEXT NOT NULL DEFAULT 'none',
-      equipped_color TEXT NOT NULL DEFAULT '#8b5a2b',
-      PRIMARY KEY (guild_id, user_id)
-    )`);
-    testDb.exec(`CREATE TABLE IF NOT EXISTS user_progress (
-      guild_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      xp INTEGER NOT NULL DEFAULT 0,
-      coins INTEGER NOT NULL DEFAULT 0,
-      level INTEGER NOT NULL DEFAULT 1,
-      messages INTEGER NOT NULL DEFAULT 0,
-      last_message_at INTEGER NOT NULL DEFAULT 0,
-      last_nickname_change_at INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (guild_id, user_id)
-    )`);
+    // 기부/랭킹용 테이블만 유지 — 코인/인벤토리는 PG가 주력
+    testDb.exec(`CREATE TABLE IF NOT EXISTS donation_ranking (guild_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL)`);
+    testDb.exec(`CREATE TABLE IF NOT EXISTS donation_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, amount INTEGER, depositor TEXT, status TEXT, created_at INTEGER, confirmed_at INTEGER)`);
     supportDb = testDb;
     supportDbPath = p;
-    console.log(`[shop] support DB at ${supportDbPath} (candidates tried: ${candidatePaths.join(", ")})`);
+    console.log(`[shop] support DB (fallback) at ${supportDbPath}`);
     break;
   } catch (e) {
     console.warn(`[shop] failed to open ${p}:`, e.message);
   }
 }
-if (!supportDb) console.warn("[shop] no support DB — coins will be 0, checked:", candidatePaths.join(", "));
+if (!supportDb) console.warn("[shop] no support DB — donation fallback disabled, checked:", candidatePaths.join(", "));
 
 const HATS = [
   { id: "none", price: 0 },
@@ -71,20 +64,52 @@ const COLORS = [
 ];
 const LEVEL_GUILD_ID = "1538513625730383902";
 
-function getCoins(userId) {
-  if (!supportDb) {
-    console.warn("[coins] no supportDb for", userId);
-    return 0;
+// ── PG 기반 코인/XP (코인 = 경험치) ──────────────────────────────────────
+async function getCoins(userId) {
+  if (pgPool) {
+    try {
+      const { rows } = await pgPool.query("SELECT coins, xp FROM user_progress WHERE guild_id=$1 AND user_id=$2", [LEVEL_GUILD_ID, userId]);
+      if (rows[0]) return Number(rows[0].coins ?? rows[0].xp ?? 0);
+      // 없으면 생성
+      await pgPool.query("INSERT INTO user_progress (guild_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [LEVEL_GUILD_ID, userId]);
+      return 0;
+    } catch (e) { console.warn("[coins PG]", e.message); }
   }
+  if (!supportDb) return 0;
   try {
     const row = supportDb.prepare("SELECT coins FROM user_progress WHERE guild_id=? AND user_id=?").get(LEVEL_GUILD_ID, userId);
     return Number(row?.coins ?? 0);
-  } catch (e) {
-    console.warn("[coins] query failed", e.message);
-    return 0;
-  }
+  } catch (e) { console.warn("[coins fallback]", e.message); return 0; }
 }
-function getInventory(userId) {
+async function getXp(userId) {
+  if (pgPool) {
+    try {
+      const { rows } = await pgPool.query("SELECT xp, coins FROM user_progress WHERE guild_id=$1 AND user_id=$2", [LEVEL_GUILD_ID, userId]);
+      if (rows[0]) return Number(rows[0].xp ?? 0);
+      await pgPool.query("INSERT INTO user_progress (guild_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [LEVEL_GUILD_ID, userId]);
+      return 0;
+    } catch (e) { console.warn("[xp PG]", e.message); }
+  }
+  return getCoins(userId);
+}
+async function getInventory(userId) {
+  if (pgPool) {
+    try {
+      let { rows } = await pgPool.query("SELECT * FROM dishouse_inventory WHERE guild_id=$1 AND user_id=$2", [LEVEL_GUILD_ID, userId]);
+      let row = rows[0];
+      if (!row) {
+        await pgPool.query("INSERT INTO dishouse_inventory (guild_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [LEVEL_GUILD_ID, userId]);
+        const r2 = await pgPool.query("SELECT * FROM dishouse_inventory WHERE guild_id=$1 AND user_id=$2", [LEVEL_GUILD_ID, userId]);
+        row = r2.rows[0];
+      }
+      return {
+        owned_hats: JSON.parse(row.owned_hats || "[]"),
+        owned_colors: JSON.parse(row.owned_colors || "[]"),
+        equipped_hat: row.equipped_hat || "none",
+        equipped_color: row.equipped_color || "#8b5a2b",
+      };
+    } catch (e) { console.warn("[inventory PG]", e.message); }
+  }
   if (!supportDb) return { owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#8b5a2b" };
   let row = supportDb.prepare("SELECT * FROM dishouse_inventory WHERE guild_id=? AND user_id=?").get(LEVEL_GUILD_ID, userId);
   if (!row) {
@@ -97,6 +122,13 @@ function getInventory(userId) {
     equipped_hat: row.equipped_hat || "none",
     equipped_color: row.equipped_color || "#8b5a2b",
   };
+}
+async function addCoinsPG(userId, delta) {
+  if (pgPool) {
+    await pgPool.query("UPDATE user_progress SET coins = GREATEST(0, coins + $1), xp = GREATEST(0, xp + $1), updated_at=now() WHERE guild_id=$2 AND user_id=$3", [delta, LEVEL_GUILD_ID, userId]);
+    return;
+  }
+  supportDb?.prepare("UPDATE user_progress SET coins = MAX(0, coins + ?) WHERE guild_id=? AND user_id=?").run(delta, LEVEL_GUILD_ID, userId);
 }
 
 // 후원 랭킹
@@ -154,10 +186,8 @@ const hostname = "0.0.0.0";
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-// DB
-const rawDb = process.env.DATABASE_URL || "";
-const cleanedDb = rawDb.replace(/[?&]sslmode=[^&]+/, "");
-const pool = new pg.Pool({ connectionString: cleanedDb, ssl: { rejectUnauthorized: false } });
+// DB — rooms 등은 pool 재사용 (pgPool과 동일 커넥션)
+const pool = pgPool ?? new pg.Pool({ connectionString: (process.env.DATABASE_URL || "").replace(/[?&]sslmode=[^&]+/g, "").replace(/[?&]channel_binding=[^&]+/g, ""), ssl: { rejectUnauthorized: false } });
 
 const ROOM_IDS = ["living", "bedroom", "kitchen", "room1", "room2", "bathroom"];
 const ROOM_LABEL = { living:"거실", bedroom:"침실", kitchen:"주방", room1:"방 1", room2:"방 2", bathroom:"화장실" };
@@ -363,7 +393,7 @@ io.use((socket, nextFn) => {
   nextFn();
 });
 
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   const sess = socket.data.session;
   const userId = sess?.discordId ?? `guest:${socket.id.slice(0,6)}`;
   const displayName = sess?.displayName ?? sess?.username ?? "게스트";
@@ -372,16 +402,18 @@ io.on("connection", (socket) => {
 
   console.log(`[socket] connect ${socket.id} as ${displayName} (${userId})`);
 
-  const inv = isGuest ? { equipped_hat: "none", equipped_color: "#6b7280", owned_hats: [], owned_colors: [] } : getInventory(userId);
+  const inv = isGuest ? { equipped_hat: "none", equipped_color: "#6b7280", owned_hats: [], owned_colors: [] } : await getInventory(userId);
   const mySkin = { hat: inv.equipped_hat, color: inv.equipped_color };
   presence.set(socket.id, { userId, displayName, avatarUrl, room: "living", pos: { x: 150, y: 150 }, skin: mySkin });
   broadcastPresence();
   if (!isGuest) {
-    socket.emit("shop:state", { coins: getCoins(userId), owned_hats: inv.owned_hats, owned_colors: inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
+    const coins = await getCoins(userId);
+    const xp = await getXp(userId).catch(()=>coins);
+    socket.emit("shop:state", { coins, xp, owned_hats: inv.owned_hats, owned_colors: inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
     // broadcast my skin to others already in room
     socket.broadcast.emit("playerSkin", { userId, skin: mySkin });
   } else {
-    socket.emit("shop:state", { coins: 0, owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#6b7280", guest: true });
+    socket.emit("shop:state", { coins: 0, xp: 0, owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#6b7280", guest: true });
   }
 
   socket.on("joinRoom", (roomId) => {
@@ -404,44 +436,58 @@ io.on("connection", (socket) => {
     socket.to(`room:${roomId ?? prev.room}`).emit("playerMove", { userId, displayName, avatarUrl, pos, roomId: roomId ?? prev.room, skin: prev.skin });
   });
 
-  socket.on("shop:buy", ({ type, id }) => {
+  socket.on("shop:buy", async ({ type, id }) => {
     if (isGuest) return socket.emit("shop:error", { message: "로그인 후 상점을 이용할 수 있어요." });
     const catalog = type === "hat" ? HATS : COLORS;
     const item = catalog.find((x) => x.id === id);
     if (!item) return socket.emit("shop:error", { message: "없는 아이템이에요." });
-    const inv = getInventory(userId);
+    const inv = await getInventory(userId);
     const owned = type === "hat" ? inv.owned_hats : inv.owned_colors;
     if (owned.includes(id) || item.price === 0) return socket.emit("shop:error", { message: "이미 보유한 아이템이에요." });
-    const coins = getCoins(userId);
+    const coins = await getCoins(userId);
     if (coins < item.price) return socket.emit("shop:error", { message: `코인이 부족해요. 보유 ${coins} / 필요 ${item.price}` });
     try {
-      supportDb.prepare("UPDATE user_progress SET coins = coins - ? WHERE guild_id=? AND user_id=?").run(item.price, LEVEL_GUILD_ID, userId);
-      const newOwned = [...owned, id];
-      if (type === "hat") supportDb.prepare("UPDATE dishouse_inventory SET owned_hats=? WHERE guild_id=? AND user_id=?").run(JSON.stringify(newOwned), LEVEL_GUILD_ID, userId);
-      else supportDb.prepare("UPDATE dishouse_inventory SET owned_colors=? WHERE guild_id=? AND user_id=?").run(JSON.stringify(newOwned), LEVEL_GUILD_ID, userId);
-      const newCoins = getCoins(userId);
-      socket.emit("shop:state", { coins: newCoins, owned_hats: type === "hat" ? newOwned : inv.owned_hats, owned_colors: type === "color" ? newOwned : inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
+      if (pgPool) {
+        await pgPool.query("UPDATE user_progress SET coins = GREATEST(0, coins - $1), xp = GREATEST(0, xp - $1), updated_at=now() WHERE guild_id=$2 AND user_id=$3", [item.price, LEVEL_GUILD_ID, userId]);
+        const newOwned = [...owned, id];
+        if (type === "hat") await pgPool.query("UPDATE dishouse_inventory SET owned_hats=$1, updated_at=now() WHERE guild_id=$2 AND user_id=$3", [JSON.stringify(newOwned), LEVEL_GUILD_ID, userId]);
+        else await pgPool.query("UPDATE dishouse_inventory SET owned_colors=$1, updated_at=now() WHERE guild_id=$2 AND user_id=$3", [JSON.stringify(newOwned), LEVEL_GUILD_ID, userId]);
+        const newCoins = await getCoins(userId);
+        socket.emit("shop:state", { coins: newCoins, xp: newCoins, owned_hats: type === "hat" ? newOwned : inv.owned_hats, owned_colors: type === "color" ? newOwned : inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
+      } else {
+        supportDb.prepare("UPDATE user_progress SET coins = coins - ? WHERE guild_id=? AND user_id=?").run(item.price, LEVEL_GUILD_ID, userId);
+        const newOwned = [...owned, id];
+        if (type === "hat") supportDb.prepare("UPDATE dishouse_inventory SET owned_hats=? WHERE guild_id=? AND user_id=?").run(JSON.stringify(newOwned), LEVEL_GUILD_ID, userId);
+        else supportDb.prepare("UPDATE dishouse_inventory SET owned_colors=? WHERE guild_id=? AND user_id=?").run(JSON.stringify(newOwned), LEVEL_GUILD_ID, userId);
+        const newCoins = await getCoins(userId);
+        socket.emit("shop:state", { coins: newCoins, xp: newCoins, owned_hats: type === "hat" ? newOwned : inv.owned_hats, owned_colors: type === "color" ? newOwned : inv.owned_colors, equipped_hat: inv.equipped_hat, equipped_color: inv.equipped_color });
+      }
       socket.emit("shop:ok", { message: `${id} 구매 완료!` });
     } catch (e) { socket.emit("shop:error", { message: String(e.message) }); }
   });
 
-  socket.on("shop:equip", ({ hat, color }) => {
+  socket.on("shop:equip", async ({ hat, color }) => {
     if (isGuest) return;
-    const inv = getInventory(userId);
+    const inv = await getInventory(userId);
     let nh = inv.equipped_hat, nc = inv.equipped_color;
     if (hat !== undefined) {
       if (hat !== "none" && !inv.owned_hats.includes(hat)) return socket.emit("shop:error", { message: "보유하지 않은 모자예요." });
-      nh = hat; supportDb.prepare("UPDATE dishouse_inventory SET equipped_hat=? WHERE guild_id=? AND user_id=?").run(hat, LEVEL_GUILD_ID, userId);
+      nh = hat;
+      if (pgPool) await pgPool.query("UPDATE dishouse_inventory SET equipped_hat=$1, updated_at=now() WHERE guild_id=$2 AND user_id=$3", [hat, LEVEL_GUILD_ID, userId]);
+      else supportDb.prepare("UPDATE dishouse_inventory SET equipped_hat=? WHERE guild_id=? AND user_id=?").run(hat, LEVEL_GUILD_ID, userId);
     }
     if (color !== undefined) {
       const free = color === "#8b5a2b";
       if (!free && !inv.owned_colors.includes(color)) return socket.emit("shop:error", { message: "보유하지 않은 색이에요." });
-      nc = color; supportDb.prepare("UPDATE dishouse_inventory SET equipped_color=? WHERE guild_id=? AND user_id=?").run(color, LEVEL_GUILD_ID, userId);
+      nc = color;
+      if (pgPool) await pgPool.query("UPDATE dishouse_inventory SET equipped_color=$1, updated_at=now() WHERE guild_id=$2 AND user_id=$3", [color, LEVEL_GUILD_ID, userId]);
+      else supportDb.prepare("UPDATE dishouse_inventory SET equipped_color=? WHERE guild_id=? AND user_id=?").run(color, LEVEL_GUILD_ID, userId);
     }
     const skin = { hat: nh, color: nc };
     const prev = presence.get(socket.id);
     if (prev) { presence.set(socket.id, { ...prev, skin }); }
-    socket.emit("shop:state", { coins: getCoins(userId), owned_hats: hat !== undefined ? inv.owned_hats : inv.owned_hats, owned_colors: color !== undefined ? inv.owned_colors : inv.owned_colors, equipped_hat: nh, equipped_color: nc });
+    const coins = await getCoins(userId);
+    socket.emit("shop:state", { coins, xp: coins, owned_hats: hat !== undefined ? inv.owned_hats : inv.owned_hats, owned_colors: color !== undefined ? inv.owned_colors : inv.owned_colors, equipped_hat: nh, equipped_color: nc });
     // broadcast to others
     socket.broadcast.emit("playerSkin", { userId, skin });
     io.emit("playerSkin", { userId, skin });
