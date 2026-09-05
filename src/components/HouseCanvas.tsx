@@ -41,7 +41,7 @@ export const DOORS: { id: string; x: number; y: number; w: number; h: number }[]
   { id: "living-kitchen", x: 348, y: 72, w: 12, h: 48 },
   { id: "kitchen-bathroom", x: 612, y: 72, w: 12, h: 48 },
   { id: "living-bedroom", x: 96, y: 286, w: 48, h: 8 },
-  { id: "living-room1", x: 350, y: 200, w: 8, h: 48 },
+  { id: "living-room1", x: 286, y: 215, w: 8, h: 48 },
   { id: "bedroom-room1", x: 284, y: 390, w: 12, h: 48 },
   { id: "room1-room2", x: 594, y: 330, w: 12, h: 48 },
 ];
@@ -1387,14 +1387,15 @@ function drawHouseArchitecture(ctx: CanvasRenderingContext2D) {
   ctx.lineWidth = 4;
 
   // Vertical walls
-  line(ctx, 354, 28, 354, 290);   // 거실 오른쪽 / 주방·방1 경계 (y=28~290 전체)
-  line(ctx, 624, 28, 624, 190);
-  line(ctx, 290, 310, 290, 572);
-  line(ctx, 588, 210, 588, 572);
+  line(ctx, 354, 28, 354, 190);   // 거실↔주방 경계 (y=28~190)
+  line(ctx, 624, 28, 624, 190);   // 주방↔화장실 경계
+  line(ctx, 290, 190, 290, 290);  // 거실↔방1 경계 (y=190~290)
+  line(ctx, 290, 310, 290, 572);  // 침실↔방1 경계 (y=310~572)
+  line(ctx, 588, 190, 588, 572);  // 방1↔방2 경계
 
   // Horizontal walls
-  line(ctx, 28, 290, 354, 290);
-  line(ctx, 310, 190, 624, 190);
+  line(ctx, 28, 290, 290, 290);   // 거실↔침실 경계 (x=28~290)
+  line(ctx, 354, 190, 624, 190);  // 주방↔방1 경계 (x=354~624)
 
   // Doorway passages
   for (const d of DOORS) {
