@@ -15,6 +15,9 @@ type ChatMsg = {
   createdAt: string;
 };
 
+const isHouseRoom = (roomId: string) => roomId.startsWith("house:");
+const houseOwnerId = (roomId: string) => roomId.split(":")[1] ?? "";
+
 export default function HouseClient({
   me,
 }: {
@@ -159,7 +162,7 @@ export default function HouseClient({
 
   useEffect(() => {
     if (!socket) return;
-    if (currentRoom.startsWith("house:")) return; // house enter handles itself
+    if (isHouseRoom(currentRoom)) return; // house enter handles itself
     socket.emit("joinRoom", currentRoom);
     setChats([]);
   }, [socket, currentRoom]);
@@ -170,6 +173,11 @@ export default function HouseClient({
   }, [socket]);
 
   const handleRoomChange = (roomId: string) => {
+    if (isHouseRoom(currentRoom)) {
+      const nextRoom = `house:${houseOwnerId(currentRoom)}:${roomId}`;
+      if (nextRoom !== currentRoom) setCurrentRoom(nextRoom);
+      return;
+    }
     if (roomId !== currentRoom) {
       setCurrentRoom(roomId);
     }
@@ -177,7 +185,7 @@ export default function HouseClient({
 
   const handleSend = () => {
     if (!socket || !input.trim()) return;
-    if (currentRoom.startsWith("house:")) {
+    if (isHouseRoom(currentRoom)) {
       if (!me) { setError("로그인 후 채팅할 수 있습니다."); return; }
       socket.emit("chat", { roomId: currentRoom, content: input.trim() });
       setInput(""); setError(null); return;
@@ -198,7 +206,7 @@ export default function HouseClient({
 
   const curRoomRow = rooms.find((r) => r.id === currentRoom);
   const myHouse = meId ? houses.find(h=>h.owner_id===meId) : null;
-  const curHouse = currentRoom.startsWith("house:") ? houses.find(h=>`house:${h.owner_id}`===currentRoom) : null;
+  const curHouse = isHouseRoom(currentRoom) ? houses.find(h=>h.owner_id===houseOwnerId(currentRoom)) : null;
   const isLinked = curHouse ? !!curHouse.channel_id : !!curRoomRow?.channel_id;
   const curMeta = curHouse ? { emoji:"🏠", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
 
@@ -243,7 +251,7 @@ export default function HouseClient({
                     <option value="public">공용 (누구나)</option>
                   </select>
                   <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className="px-3 py-1 rounded-full bg-[#2d1b0e] text-white text-xs font-bold cursor-pointer">내 집 입장</button>
-                  {currentRoom.startsWith("house:") && <button onClick={()=>socket?.emit("house:leave")} className="px-3 py-1 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">거실로 나가기</button>}
+                  {isHouseRoom(currentRoom) && <button onClick={()=>socket?.emit("house:leave")} className="px-3 py-1 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">거실로 나가기</button>}
                 </>
               )}
               <button onClick={()=>{socket?.emit("house:list"); socket?.emit("house:myInvites");}} className="ml-auto text-xs px-2.5 py-1 rounded-full bg-[#f5ece0] border border-[#e7d5b8] font-bold cursor-pointer">새로고침</button>
@@ -252,9 +260,9 @@ export default function HouseClient({
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-bold text-[#8b6a4a]">빠른 이동:</span>
               <button onClick={()=>{ setCurrentRoom("living"); socket?.emit("joinRoom","living"); }} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom==="living" ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>거실(공용)</button>
-              {myHouse && <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom===`house:${meId}` ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>내 집</button>}
+              {myHouse && <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===meId ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>내 집</button>}
               {houses.filter(h=>h.visibility==='public').slice(0,3).map(h=>(
-                <button key={h.id} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom===`house:${h.owner_id}` ? "bg-emerald-600 text-white" : "bg-emerald-50 border border-emerald-200 text-emerald-800"}`}>공용 {h.floor}층</button>
+                <button key={h.id} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===h.owner_id ? "bg-emerald-600 text-white" : "bg-emerald-50 border border-emerald-200 text-emerald-800"}`}>공용 {h.floor}층</button>
               ))}
             </div>
             {/* 초대 */}
@@ -281,7 +289,7 @@ export default function HouseClient({
                       {isMine && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900">내 집</span>}
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {currentRoom===`house:${h.owner_id}` ? (
+                      {isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===h.owner_id ? (
                         <button onClick={()=>socket?.emit("house:leave")} className="px-2.5 py-1 rounded-full bg-zinc-300 text-zinc-700 font-bold cursor-pointer">나가기</button>
                       ) : (
                         <button disabled={!canEnter && !isMine} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full font-bold cursor-pointer ${canEnter||isMine ? "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a]" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>{canEnter||isMine ? "입장" : "초대필요"}</button>
