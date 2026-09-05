@@ -145,6 +145,10 @@ export default function HouseClient({
       s.emit("joinRoom", "living");
       setChats([]);
     });
+    s.on("house:deleted", ({ ownerId }: { ownerId: string }) => {
+      setHouses((prev) => prev.filter((house) => house.owner_id !== ownerId));
+      setMyInvites((prev) => prev.filter((house) => house.owner_id !== ownerId));
+    });
     s.on("house:ok", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
     s.on("house:error", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
     s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
@@ -250,7 +254,8 @@ export default function HouseClient({
                     <option value="invite_only">초대만</option>
                     <option value="public">공용 (누구나)</option>
                   </select>
-                  <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className="px-3 py-1 rounded-full bg-[#2d1b0e] text-white text-xs font-bold cursor-pointer">내 집 입장</button>
+                  <button disabled={myHouse.visibility==='private'} onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className={`px-3 py-1 rounded-full text-xs font-bold ${myHouse.visibility==='private' ? "bg-zinc-200 text-zinc-400 cursor-not-allowed" : "bg-[#2d1b0e] text-white cursor-pointer"}`}>{myHouse.visibility==='private' ? "비공개 중" : "내 집 입장"}</button>
+                  <button onClick={()=>{ if (window.confirm("내 집과 Discord 방 6개를 삭제할까요?")) socket?.emit("house:delete"); }} className="px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold cursor-pointer">집 삭제</button>
                   {isHouseRoom(currentRoom) && <button onClick={()=>socket?.emit("house:leave")} className="px-3 py-1 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">거실로 나가기</button>}
                 </>
               )}
@@ -292,7 +297,7 @@ export default function HouseClient({
                       {isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===h.owner_id ? (
                         <button onClick={()=>socket?.emit("house:leave")} className="px-2.5 py-1 rounded-full bg-zinc-300 text-zinc-700 font-bold cursor-pointer">나가기</button>
                       ) : (
-                        <button disabled={!canEnter && !isMine} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full font-bold cursor-pointer ${canEnter||isMine ? "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a]" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>{canEnter||isMine ? "입장" : "초대필요"}</button>
+                        <button disabled={!canEnter} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full font-bold ${canEnter ? "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a] cursor-pointer" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>{canEnter ? "입장" : h.visibility==='private' && isMine ? "비공개 중" : "초대필요"}</button>
                       )}
                     </div>
                   </div>

@@ -226,10 +226,10 @@ async function isHouseInvited(houseId, targetId) {
 }
 async function canAccessHouse(house, viewerId) {
   if (!house) return false;
-  if (house.owner_id === viewerId) return true;
   if (viewerId === '1269575955626725390') return true;
-  if (house.visibility === 'public') return true;
   if (house.visibility === 'private') return false;
+  if (house.owner_id === viewerId) return true;
+  if (house.visibility === 'public') return true;
   return isHouseInvited(house.id, viewerId);
 }
 async function updateHouseChannelPermissions(guild, house) {
@@ -238,14 +238,29 @@ async function updateHouseChannelPermissions(guild, house) {
   const channels = await pool.query(`SELECT channel_id FROM dishouse_house_rooms WHERE house_id=$1`, [house.id]).then(r=>r.rows).catch(()=>[]);
   const targets = [category, ...channels.map(row => guild.channels.fetch(row.channel_id).catch(()=>null))];
   const everyone = guild.roles.everyone;
+  const owner = await guild.members.fetch(house.owner_id).catch(()=>null);
   try {
     for (const target of await Promise.all(targets)) {
       if (!target) continue;
       await target.permissionOverwrites.edit(everyone.id, house.visibility === 'public'
         ? { ViewChannel: true, ReadMessageHistory: true }
         : { ViewChannel: false });
+      if (owner) {
+        await target.permissionOverwrites.edit(owner.id, house.visibility === 'private'
+          ? { ViewChannel: false, SendMessages: false, ReadMessageHistory: false }
+          : { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+      }
     }
   } catch (e) { console.warn('[house perm update]', e.message); }
+}
+async function deleteHouse(guild, house) {
+  const roomRows = await pool.query(`SELECT channel_id FROM dishouse_house_rooms WHERE house_id=$1`, [house.id]).then(r=>r.rows).catch(()=>[]);
+  const channelIds = [...new Set([house.category_id, house.channel_id, ...roomRows.map(row => row.channel_id)].filter(Boolean))];
+  for (const channelId of channelIds) {
+    const channel = await guild.channels.fetch(channelId).catch(()=>null);
+    if (channel) await channel.delete().catch((error) => console.warn('[house delete channel]', error.message));
+  }
+  await pool.query(`DELETE FROM dishouse_houses WHERE id=$1`, [house.id]);
 }
 async function getNextHouseFloor(guildId) {
   const { rows } = await pool.query(`SELECT COALESCE(MAX(floor),4)+1 AS nxt FROM dishouse_houses WHERE guild_id=$1`, [guildId]);
@@ -769,6 +784,25 @@ io.on("connection", async (socket) => {
       const rows = await getHouses(HOUSE_GUILD_ID);
       io.emit("houses", rows);
     } catch (e) { socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:delete", async () => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      if (!house) return socket.emit("house:error", { message: "내 하우스가 없습니다." });
+      const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
+      if (!guild) return socket.emit("house:error", { message: "Discord 서버를 찾을 수 없습니다." });
+      await deleteHouse(guild, house);
+      await leaveCurrentHouse();
+      for (const [key] of [...socket.rooms]) { if (key.startsWith('room:house:')) socket.leave(key); }
+      socket.join(`room:living`);
+      const prev = presence.get(socket.id);
+      if (prev) presence.set(socket.id, { ...prev, room: 'living' });
+      broadcastPresence();
+      io.emit("house:deleted", { ownerId: userId });
+      socket.emit("house:left");
+      io.emit("houses", await getHouses(HOUSE_GUILD_ID));
+    } catch (e) { console.error('[house:delete]', e); socket.emit("house:error", { message: String(e.message) }); }
   });
   socket.on("house:myInvites", async () => {
     if (isGuest) return socket.emit("house:myInvites", []);
