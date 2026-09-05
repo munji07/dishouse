@@ -22,27 +22,28 @@ export type ProfileData = {
   colorHex: string;
 };
 
+// 6 Cozy Cottage Rooms with surrounding garden margin
 export const MAP = {
   width: 900,
   height: 600,
   rooms: [
-    { id: "living", name: "거실", emoji: "🛋️", x: 14, y: 14, w: 332, h: 272, defaultChannel: "일반" },
-    { id: "kitchen", name: "주방", emoji: "🍳", x: 360, y: 14, w: 256, h: 166, defaultChannel: "요리" },
-    { id: "bathroom", name: "화장실", emoji: "🚿", x: 630, y: 14, w: 256, h: 166, defaultChannel: "잡담" },
-    { id: "bedroom", name: "침실", emoji: "🛏️", x: 14, y: 300, w: 272, h: 286, defaultChannel: "일상" },
-    { id: "room1", name: "방 1", emoji: "🚪", x: 300, y: 194, w: 286, h: 392, defaultChannel: "게임" },
-    { id: "room2", name: "방 2", emoji: "🚪", x: 600, y: 194, w: 286, h: 392, defaultChannel: "공부" },
+    { id: "living", name: "거실", emoji: "🛋️", x: 28, y: 28, w: 326, h: 262, defaultChannel: "일반" },
+    { id: "kitchen", name: "주방", emoji: "🍳", x: 374, y: 28, w: 250, h: 162, defaultChannel: "요리" },
+    { id: "bathroom", name: "화장실", emoji: "🚿", x: 644, y: 28, w: 228, h: 162, defaultChannel: "잡담" },
+    { id: "bedroom", name: "침실", emoji: "🛏️", x: 28, y: 310, w: 262, h: 262, defaultChannel: "일상" },
+    { id: "room1", name: "방 1 (게임방)", emoji: "🎮", x: 310, y: 210, w: 278, h: 362, defaultChannel: "게임" },
+    { id: "room2", name: "방 2 (서재)", emoji: "📚", x: 608, y: 210, w: 264, h: 362, defaultChannel: "공부" },
   ] as const,
 };
 
-// Passageways between rooms
+// Openings between rooms with wooden thresholds
 export const DOORS: { id: string; x: number; y: number; w: number; h: number }[] = [
-  { id: "living-kitchen", x: 346, y: 64, w: 14, h: 52 },
-  { id: "kitchen-bathroom", x: 616, y: 64, w: 14, h: 52 },
-  { id: "living-bedroom", x: 120, y: 286, w: 52, h: 14 },
-  { id: "living-room1", x: 346, y: 212, w: 14, h: 52 },
-  { id: "bedroom-room1", x: 286, y: 390, w: 14, h: 52 },
-  { id: "room1-room2", x: 586, y: 330, w: 14, h: 52 },
+  { id: "living-kitchen", x: 354, y: 72, w: 20, h: 52 },
+  { id: "kitchen-bathroom", x: 624, y: 72, w: 20, h: 52 },
+  { id: "living-bedroom", x: 120, y: 290, w: 52, h: 20 },
+  { id: "living-room1", x: 354, y: 220, w: 20, h: 52 },
+  { id: "bedroom-room1", x: 290, y: 390, w: 20, h: 52 },
+  { id: "room1-room2", x: 588, y: 330, w: 20, h: 52 },
 ];
 
 export function getRoomId(pos: Pos) {
@@ -80,7 +81,6 @@ export default function HouseCanvas({
   const isMovingRef = useRef(false);
   const walkCycleRef = useRef(0);
 
-  // Track other player previous positions to calculate their facing and walking animation
   const prevOthersPos = useRef<Map<string, { x: number; y: number; facing: Direction; walkCycle: number }>>(new Map());
 
   const [room, setRoom] = useState("living");
@@ -91,12 +91,10 @@ export default function HouseCanvas({
   const otherImgs = useRef<Map<string, HTMLImageElement>>(new Map());
   const lastEmit = useRef(0);
 
-  // Notify parent of room changes
   useEffect(() => {
     onRoomChange?.(room);
   }, [room, onRoomChange]);
 
-  // Load user's avatar image
   useEffect(() => {
     if (!me?.avatarUrl) {
       avatarImgRef.current = null;
@@ -108,7 +106,6 @@ export default function HouseCanvas({
     img.onload = () => (avatarImgRef.current = img);
   }, [me?.avatarUrl]);
 
-  // Preload other players' avatars
   useEffect(() => {
     for (const o of others) {
       if (!o.avatarUrl || otherImgs.current.has(o.id)) continue;
@@ -119,7 +116,7 @@ export default function HouseCanvas({
     }
   }, [others]);
 
-  // Click handler on canvas (Target move + Profile card trigger on player click)
+  // Click handler (Move target & Profile card trigger)
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -131,7 +128,7 @@ export default function HouseCanvas({
       const clickX = (e.clientX - rect.left) * sx;
       const clickY = (e.clientY - rect.top) * sy;
 
-      // Check if clicked on 'me'
+      // Click on Me
       const myDist = Math.hypot(clickX - posRef.current.x, clickY - (posRef.current.y - 12));
       if (myDist < 26) {
         const curMeta = MAP.rooms.find((r) => r.id === room);
@@ -150,7 +147,7 @@ export default function HouseCanvas({
         return;
       }
 
-      // Check if clicked on any other player
+      // Click on another player
       let clickedOther: OtherPlayer | null = null;
       for (const o of others) {
         const d = Math.hypot(clickX - o.pos.x, clickY - (o.pos.y - 12));
@@ -178,11 +175,11 @@ export default function HouseCanvas({
         return;
       }
 
-      // Otherwise, set walk target
+      // Normal movement target
       setSelectedProfile(null);
       targetRef.current = {
-        x: Math.max(24, Math.min(MAP.width - 24, clickX)),
-        y: Math.max(24, Math.min(MAP.height - 24, clickY)),
+        x: Math.max(36, Math.min(MAP.width - 36, clickX)),
+        y: Math.max(36, Math.min(MAP.height - 36, clickY)),
       };
     };
 
@@ -190,7 +187,7 @@ export default function HouseCanvas({
     return () => c.removeEventListener("click", onClick);
   }, [others, othersSkins, room, me, equipped]);
 
-  // Movement loop (Keyboard & Target pathing)
+  // Movement physics loop
   useEffect(() => {
     const keys = new Set<string>();
     const onDown = (e: KeyboardEvent) => {
@@ -221,8 +218,8 @@ export default function HouseCanvas({
           facingRef.current = dy > 0 ? "down" : "up";
         }
 
-        const nx = Math.max(24, Math.min(MAP.width - 24, posRef.current.x + dx));
-        const ny = Math.max(24, Math.min(MAP.height - 24, posRef.current.y + dy));
+        const nx = Math.max(36, Math.min(MAP.width - 36, posRef.current.x + dx));
+        const ny = Math.max(36, Math.min(MAP.height - 36, posRef.current.y + dy));
         const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
         const nearDoor = DOORS.some(
           (d) => nx >= d.x - 8 && nx < d.x + d.w + 8 && ny >= d.y - 8 && ny < d.y + d.h + 8
@@ -289,7 +286,6 @@ export default function HouseCanvas({
     };
   }, [room, socket]);
 
-  // Determine ambient lighting mode
   const resolvedTime = useCallback((): "day" | "dusk" | "night" => {
     if (timeMode !== "auto") return timeMode;
     const hour = new Date().getHours();
@@ -298,7 +294,7 @@ export default function HouseCanvas({
     return "night";
   }, [timeMode]);
 
-  // Main Canvas Render Loop
+  // Main Canvas Render
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -310,27 +306,26 @@ export default function HouseCanvas({
       const timeOfDay = resolvedTime();
       const flicker = 0.94 + Math.sin(t * 4.2) * 0.04 + Math.sin(t * 7.1) * 0.02;
 
-      // 1. Base House Canvas Clear
-      ctx.fillStyle = "#26150a";
-      ctx.fillRect(0, 0, c.width, c.height);
+      // 1. Exterior Garden Lawn & Cobblestone Entrance
+      drawCottageExterior(ctx, MAP.width, MAP.height, t, timeOfDay);
 
-      // 2. Room Floors (Stardew-inspired pixel art tiles)
+      // 2. 6 Cottage Rooms Floor & Walls
       for (const r of MAP.rooms) {
         drawRoomFloor(ctx, r);
         drawRoomRugs(ctx, r);
-        drawRoomWindowsAndSunlight(ctx, r, timeOfDay);
+        drawRoomWindowsAndSunlight(ctx, r, timeOfDay, t);
         drawRoomWallsAndShadows(ctx, r);
-        drawDetailedFurniture(ctx, r, t, flicker, timeOfDay);
+        drawHandcraftedFurniture(ctx, r, t, flicker, timeOfDay);
         drawRoomLabel(ctx, r, room === r.id);
       }
 
-      // 3. Thick Log Wall Frames & Doorways
+      // 3. Thick Log Wall Trim & Doorways
       drawHouseArchitecture(ctx);
 
-      // 4. Fireplace & Ambient Warmth in Living Room
-      drawFireplaceGlow(ctx, flicker, timeOfDay);
+      // 4. Living Room Fireplace Embers & Smoke
+      drawLivingFireplace(ctx, flicker, timeOfDay, t);
 
-      // 5. Target pointer if moving by click
+      // 5. Target pointer
       if (targetRef.current) {
         ctx.save();
         const pulse = 1 + Math.sin(t * 6) * 0.2;
@@ -346,7 +341,7 @@ export default function HouseCanvas({
         ctx.restore();
       }
 
-      // 6. Other Players Rendering (with directional walking animation)
+      // 6. Other Players
       for (const o of others) {
         const same = o.room === room;
         const skin = othersSkins[o.id] ?? { hat: "none", color: "#6b7280" };
@@ -399,7 +394,7 @@ export default function HouseCanvas({
         ctx.globalAlpha = 1;
       }
 
-      // 7. 'Me' Player Rendering
+      // 7. 'Me' Character
       const myBob = isMovingRef.current
         ? Math.abs(Math.sin(walkCycleRef.current)) * 2.2
         : Math.sin(t * 2.4) * 0.9;
@@ -418,11 +413,10 @@ export default function HouseCanvas({
         selectedProfile?.id === (me?.discordId || "me")
       );
 
-      // Check speech bubble for me
       const myBubble = bubbles.find((b) => b.displayName === me?.displayName || b.userId === me?.discordId);
       if (myBubble) drawSpeechBubble(ctx, myPos, myBubble.content);
 
-      // 8. Time of Day Ambient Lighting & Night Overlay
+      // 8. Volumetric Lighting & Atmosphere
       drawTimeOfDayLighting(ctx, timeOfDay, flicker, myPos, others);
 
       raf = requestAnimationFrame(draw);
@@ -432,15 +426,14 @@ export default function HouseCanvas({
     return () => cancelAnimationFrame(raf);
   }, [me, others, bubbles, room, resolvedTime, equipped, othersSkins, selectedProfile]);
 
-  // Mobile virtual d-pad helper
   const movePad = (dx: number, dy: number) => {
     if (Math.abs(dx) > Math.abs(dy)) {
       facingRef.current = dx > 0 ? "right" : "left";
     } else {
       facingRef.current = dy > 0 ? "down" : "up";
     }
-    const nx = Math.max(24, Math.min(MAP.width - 24, posRef.current.x + dx));
-    const ny = Math.max(24, Math.min(MAP.height - 24, posRef.current.y + dy));
+    const nx = Math.max(36, Math.min(MAP.width - 36, posRef.current.x + dx));
+    const ny = Math.max(36, Math.min(MAP.height - 36, posRef.current.y + dy));
     const inside = MAP.rooms.some((r) => nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h);
     const nearDoor = DOORS.some(
       (d) => nx >= d.x - 8 && nx < d.x + d.w + 8 && ny >= d.y - 8 && ny < d.y + d.h + 8
@@ -456,44 +449,56 @@ export default function HouseCanvas({
   };
 
   return (
-    <div className="w-full flex flex-col items-center gap-2 select-none relative">
-      <div className="w-full flex items-center justify-between px-1 text-xs text-[#8b6a4a] mb-0.5">
+    <div className="w-full flex flex-col items-center gap-2 select-none relative font-rounded">
+      {/* Cottage Sun & Weather Switch Bar */}
+      <div className="w-full flex items-center justify-between px-1 text-xs text-[#6b4a2a]">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-[#5c3a1a]">조명 설정:</span>
-          <div className="flex rounded-lg bg-[#eddcc6] p-0.5 border border-[#d4be9f] text-[11px]">
+          <span className="font-bold text-[#45240c] flex items-center gap-1">
+            <span>🕰️</span> 집안 시간:
+          </span>
+          <div className="flex rounded-xl bg-[#e6d5bc] p-0.5 border border-[#c9ad8b] text-[11px] shadow-2xs">
             {(["auto", "day", "dusk", "night"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => onTimeModeChange?.(m)}
-                className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
-                  timeMode === m ? "bg-[#8b5a2b] text-white shadow-xs" : "text-[#6b4a2a] hover:bg-[#dfcaa8]"
+                className={`px-2.5 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                  timeMode === m
+                    ? "bg-[#6b3d1a] text-[#fef3c7] shadow-xs scale-105"
+                    : "text-[#5c3a1a] hover:bg-[#d8c2a3]"
                 }`}
               >
-                {m === "auto" ? "⏱️ 자동" : m === "day" ? "☀️ 낮" : m === "dusk" ? "🌅 노을" : "🌙 밤"}
+                {m === "auto" ? "⏱️ 실시간" : m === "day" ? "☀️ 낮 햇살" : m === "dusk" ? "🌅 저녁 노을" : "🌙 포근한 밤"}
               </button>
             ))}
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-[11px]">
-          <span>💡 캐릭터를 클릭하면 프로필 카드가 열려요</span>
+
+        <div className="hidden sm:flex items-center gap-2 text-[11px] text-[#785332]">
+          <span className="px-2 py-0.5 rounded-md bg-[#fff7ed] border border-[#e7d5b8]">
+            🖱️ 마우스 클릭 또는 WASD로 이동
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-[#fff7ed] border border-[#e7d5b8]">
+            👤 주민 클릭 시 프로필 확인
+          </span>
         </div>
       </div>
 
-      <div className="relative w-full overflow-hidden rounded-xl">
+      {/* 2D Cottage Frame */}
+      <div className="relative w-full overflow-hidden rounded-2xl border-4 border-[#5c3318] shadow-[0_16px_36px_rgba(45,20,5,0.28)] bg-[#2b170c]">
         <canvas
           ref={canvasRef}
           width={MAP.width}
           height={MAP.height}
-          className="pixelated rounded-xl bg-[#26150a] w-full h-auto block shadow-inner border border-[#8b5a2b]/30 cursor-pointer"
+          className="pixelated w-full h-auto block cursor-pointer"
           style={{ aspectRatio: "900/600" }}
         />
 
-        {/* Floating Profile Card Modal (Section 20) */}
+        {/* Interactive Cottage Guest Profile Card */}
         {selectedProfile && (
-          <div className="absolute top-4 right-4 z-30 bg-[#fffaf0] border-2 border-[#8b5a2b] rounded-2xl p-3.5 shadow-xl w-64 warm-enter">
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center gap-2.5">
-                <div className="relative w-11 h-11 rounded-xl bg-[#e6d5bc] border-2 border-[#8b5a2b] overflow-hidden flex items-center justify-center shrink-0">
+          <div className="absolute top-4 right-4 z-30 bg-[#fffdf8] border-3 border-[#784421] rounded-2xl p-4 shadow-2xl w-68 warm-enter">
+            <div className="flex items-start justify-between mb-3 border-b border-[#ebdcc7] pb-2.5">
+              <div className="flex items-center gap-3">
+                <div className="relative w-12 h-12 rounded-2xl bg-[#eddcc6] border-2 border-[#8b5a2b] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
                   {selectedProfile.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -502,24 +507,24 @@ export default function HouseCanvas({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-xl">🧑</span>
+                    <span className="text-2xl">🧑</span>
                   )}
                   {selectedProfile.hatEmoji !== "—" && (
-                    <span className="absolute -top-1 -right-1 text-sm">{selectedProfile.hatEmoji}</span>
+                    <span className="absolute -top-1 -right-1 text-base">{selectedProfile.hatEmoji}</span>
                   )}
                 </div>
                 <div>
-                  <div className="font-black text-sm text-[#2d1b0e] flex items-center gap-1">
+                  <div className="font-black text-sm text-[#2d1b0e] flex items-center gap-1.5 font-display">
                     {selectedProfile.name}
                     {selectedProfile.isMe && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 font-bold">
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-bold">
                         나
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-[#22c55e] font-bold flex items-center gap-1">
+                  <div className="text-[11px] text-[#16a34a] font-bold flex items-center gap-1 mt-0.5">
                     <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse" />
-                    온라인
+                    디스하우스 거주 중
                   </div>
                 </div>
               </div>
@@ -531,7 +536,7 @@ export default function HouseCanvas({
               </button>
             </div>
 
-            <div className="bg-[#f5ece0] rounded-xl p-2.5 flex flex-col gap-1.5 text-xs text-[#5c3a1a]">
+            <div className="bg-[#f5ecdd] rounded-xl p-3 flex flex-col gap-2 text-xs text-[#5c3a1a] border border-[#ded0bb]">
               <div className="flex items-center justify-between">
                 <span className="opacity-75">현재 위치:</span>
                 <span className="font-bold flex items-center gap-1">
@@ -547,13 +552,13 @@ export default function HouseCanvas({
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="opacity-75">스웨터:</span>
-                <div className="flex items-center gap-1">
+                <span className="opacity-75">스웨터 색상:</span>
+                <div className="flex items-center gap-1.5">
                   <span
-                    className="w-3.5 h-3.5 rounded-full border border-black/20"
+                    className="w-4 h-4 rounded-full border border-black/20 shadow-xs"
                     style={{ background: selectedProfile.colorHex }}
                   />
-                  <span className="font-bold text-[11px]">착용중</span>
+                  <span className="font-bold text-[11px]">입고 있음</span>
                 </div>
               </div>
             </div>
@@ -561,7 +566,7 @@ export default function HouseCanvas({
         )}
       </div>
 
-      {/* Mobile D-Pad */}
+      {/* Mobile Pad */}
       <div className="flex gap-2 md:hidden pt-1">
         <PadButton onMove={movePad} />
       </div>
@@ -570,24 +575,67 @@ export default function HouseCanvas({
 }
 
 // -------------------------------------------------------------
-// Canvas Drawing Helper Functions
+// Detailed Handcrafted Pixel Art Cottage Renderers (No Emojis!)
 // -------------------------------------------------------------
+
+function drawCottageExterior(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  t: number,
+  timeOfDay: "day" | "dusk" | "night"
+) {
+  ctx.save();
+
+  // Lawn grass color based on time of day
+  if (timeOfDay === "night") {
+    ctx.fillStyle = "#1e3321";
+  } else if (timeOfDay === "dusk") {
+    ctx.fillStyle = "#3b4421";
+  } else {
+    ctx.fillStyle = "#4d7c38";
+  }
+  ctx.fillRect(0, 0, width, height);
+
+  // Tiny daisies and wildflower patches in the grass corners
+  const flowers = [
+    { x: 12, y: 12, color: "#fef08a" },
+    { x: 22, y: 18, color: "#fbcfe8" },
+    { x: 14, y: height - 16, color: "#fef08a" },
+    { x: 20, y: height - 24, color: "#ffffff" },
+    { x: width - 16, y: 14, color: "#fbcfe8" },
+    { x: width - 24, y: 22, color: "#ffffff" },
+    { x: width - 18, y: height - 16, color: "#fef08a" },
+    { x: width - 26, y: height - 22, color: "#fbcfe8" },
+  ];
+  flowers.forEach((f) => {
+    ctx.fillStyle = f.color;
+    ctx.fillRect(f.x, f.y, 3, 3);
+    ctx.fillStyle = "#ca8a04";
+    ctx.fillRect(f.x + 1, f.y + 1, 1, 1);
+  });
+
+  // Mossy stone foundation border
+  ctx.strokeStyle = "#271b12";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(20, 20, width - 40, height - 40);
+
+  ctx.restore();
+}
 
 function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[number]) {
   ctx.save();
 
   if (r.id === "living") {
-    // Warm Honey Oak Wood Floorboards
+    // Honey Oak Parquet Planks
     ctx.fillStyle = "#dfb47f";
     ctx.fillRect(r.x, r.y, r.w, r.h);
 
-    // Plank seams
     const plankH = 16;
     for (let y = r.y; y < r.y + r.h; y += plankH) {
       ctx.fillStyle = "rgba(92, 58, 26, 0.16)";
       ctx.fillRect(r.x, y, r.w, 1);
 
-      // Staggered vertical joints
       const isAlt = Math.floor((y - r.y) / plankH) % 2 === 0;
       const step = 48;
       for (let x = r.x + (isAlt ? 24 : 0); x < r.x + r.w; x += step) {
@@ -595,16 +643,15 @@ function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
       }
     }
   } else if (r.id === "kitchen") {
-    // Bistro Checkered Tile Floor (Cream & Butterscotch)
+    // Retro Checkered Ceramic Tiles
     const tileSize = 20;
     for (let y = r.y; y < r.y + r.h; y += tileSize) {
       for (let x = r.x; x < r.x + r.w; x += tileSize) {
         const isDark = ((x - r.x) / tileSize + (y - r.y) / tileSize) % 2 === 0;
-        ctx.fillStyle = isDark ? "#edd4a8" : "#fff8ea";
+        ctx.fillStyle = isDark ? "#ebd4aa" : "#fffbf0";
         ctx.fillRect(x, y, tileSize, tileSize);
       }
     }
-    // Subtle grout lines
     ctx.strokeStyle = "rgba(139, 90, 43, 0.12)";
     ctx.lineWidth = 1;
     for (let y = r.y; y < r.y + r.h; y += tileSize) {
@@ -620,12 +667,12 @@ function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
       ctx.stroke();
     }
   } else if (r.id === "bathroom") {
-    // Glossy Sky-Blue Mosaic Tile Floor
+    // Seafoam & Ice Blue Mosaic Tiles
     const mosaic = 14;
     for (let y = r.y; y < r.y + r.h; y += mosaic) {
       for (let x = r.x; x < r.x + r.w; x += mosaic) {
         const alt = ((x - r.x) / mosaic + (y - r.y) / mosaic) % 3;
-        ctx.fillStyle = alt === 0 ? "#cbe9f8" : alt === 1 ? "#dcf2fb" : "#bce0f2";
+        ctx.fillStyle = alt === 0 ? "#ccecf8" : alt === 1 ? "#dff4fc" : "#bce2f3";
         ctx.fillRect(x, y, mosaic, mosaic);
       }
     }
@@ -638,8 +685,8 @@ function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
       ctx.stroke();
     }
   } else if (r.id === "bedroom") {
-    // Soft Pine Bedroom Floor
-    ctx.fillStyle = "#ebd5ba";
+    // Rosy Cedar Wood Floor
+    ctx.fillStyle = "#edd2b9";
     ctx.fillRect(r.x, r.y, r.w, r.h);
     const plankH = 18;
     for (let y = r.y; y < r.y + r.h; y += plankH) {
@@ -647,8 +694,8 @@ function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
       ctx.fillRect(r.x, y, r.w, 1);
     }
   } else if (r.id === "room1") {
-    // Modern Ash Floorboards
-    ctx.fillStyle = "#d8cbbe";
+    // Modern Ash Gray Floor
+    ctx.fillStyle = "#dcd1c5";
     ctx.fillRect(r.x, r.y, r.w, r.h);
     const plankH = 16;
     for (let y = r.y; y < r.y + r.h; y += plankH) {
@@ -656,8 +703,8 @@ function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
       ctx.fillRect(r.x, y, r.w, 1);
     }
   } else {
-    // Study Room: Dark Walnut Floor
-    ctx.fillStyle = "#c99e74";
+    // Study Room: Antique Walnut Parquet
+    ctx.fillStyle = "#cb9f75";
     ctx.fillRect(r.x, r.y, r.w, r.h);
     const plankH = 16;
     for (let y = r.y; y < r.y + r.h; y += plankH) {
@@ -672,47 +719,45 @@ function drawRoomFloor(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
 function drawRoomRugs(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[number]) {
   ctx.save();
   if (r.id === "living") {
-    // Vintage diamond living rug
+    // Bohemian Terracotta Carpet
     const rx = r.x + 44,
       ry = r.y + 110,
       rw = 180,
-      rh = 100;
-    ctx.fillStyle = "#e07a5f";
-    ctx.globalAlpha = 0.85;
+      rh = 98;
+    ctx.fillStyle = "#d97757";
     roundRect(ctx, rx, ry, rw, rh, 8);
     ctx.fill();
 
-    // Pattern in rug
-    ctx.strokeStyle = "#f4f1de";
-    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = "#fef3c7";
+    ctx.globalAlpha = 0.5;
     ctx.lineWidth = 2;
     roundRect(ctx, rx + 6, ry + 6, rw - 12, rh - 12, 6);
     ctx.stroke();
 
     // Fringe tassels
-    ctx.fillStyle = "#f4f1de";
-    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = "#fef3c7";
+    ctx.globalAlpha = 0.7;
     for (let x = rx + 8; x < rx + rw - 4; x += 10) {
       ctx.fillRect(x, ry - 3, 4, 3);
       ctx.fillRect(x, ry + rh, 4, 3);
     }
   } else if (r.id === "bedroom") {
-    // Fluffy bedside oval rug
+    // Fluffy Braided Wool Bedside Rug
     ctx.fillStyle = "#fbcfe8";
     ctx.globalAlpha = 0.75;
     ctx.beginPath();
-    ctx.ellipse(r.x + 130, r.y + 175, 55, 35, 0, 0, Math.PI * 2);
+    ctx.ellipse(r.x + 130, r.y + 175, 54, 34, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#f472b6";
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.45;
     ctx.beginPath();
-    ctx.ellipse(r.x + 130, r.y + 175, 48, 30, 0, 0, Math.PI * 2);
+    ctx.ellipse(r.x + 130, r.y + 175, 46, 28, 0, 0, Math.PI * 2);
     ctx.stroke();
   } else if (r.id === "bathroom") {
-    // Memory foam bathmat
+    // Memory Foam Bathmat
     ctx.fillStyle = "#93c5fd";
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.85;
     roundRect(ctx, r.x + 36, r.y + 88, 54, 28, 6);
     ctx.fill();
     ctx.strokeStyle = "#ffffff";
@@ -721,9 +766,9 @@ function drawRoomRugs(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numbe
     roundRect(ctx, r.x + 40, r.y + 92, 46, 20, 4);
     ctx.stroke();
   } else if (r.id === "room1") {
-    // Gamer neon cyber geometric rug
+    // Gamer Cyber Neon Rug
     ctx.fillStyle = "#1e293b";
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.88;
     roundRect(ctx, r.x + 50, r.y + 110, 140, 80, 8);
     ctx.fill();
     ctx.strokeStyle = "#38bdf8";
@@ -732,9 +777,9 @@ function drawRoomRugs(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numbe
     roundRect(ctx, r.x + 55, r.y + 115, 130, 70, 6);
     ctx.stroke();
   } else if (r.id === "room2") {
-    // Persian style library runner
+    // Persian Royal Library Runner
     ctx.fillStyle = "#991b1b";
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.88;
     roundRect(ctx, r.x + 40, r.y + 120, 150, 95, 8);
     ctx.fill();
     ctx.strokeStyle = "#fbbf24";
@@ -749,10 +794,10 @@ function drawRoomRugs(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numbe
 function drawRoomWindowsAndSunlight(
   ctx: CanvasRenderingContext2D,
   r: (typeof MAP.rooms)[number],
-  timeOfDay: "day" | "dusk" | "night"
+  timeOfDay: "day" | "dusk" | "night",
+  t: number
 ) {
   ctx.save();
-  // North windows on top wall
   const winPositions: Record<string, number[]> = {
     living: [r.x + 120, r.x + 230],
     kitchen: [r.x + 100],
@@ -764,35 +809,36 @@ function drawRoomWindowsAndSunlight(
 
   const wins = winPositions[r.id] ?? [];
   for (const wx of wins) {
-    const wy = r.y + 4;
-    const ww = 42;
+    const wy = r.y + 3;
+    const ww = 44;
     const wh = 24;
 
-    // Window frame
+    // Wood window frame
     ctx.fillStyle = "#45240c";
     ctx.fillRect(wx - 2, wy - 2, ww + 4, wh + 4);
 
-    // Sky inside window pane
+    // Sky outside
     if (timeOfDay === "day") {
-      ctx.fillStyle = "#7dd3fc";
+      ctx.fillStyle = "#60a5fa";
       ctx.fillRect(wx, wy, ww, wh);
-      // Fluffy cloud
+
+      // Drifting soft cloud
+      const cloudOffset = (t * 4 + wx) % 60;
       ctx.fillStyle = "#ffffff";
       ctx.globalAlpha = 0.85;
       ctx.beginPath();
-      ctx.arc(wx + 14, wy + 12, 6, 0, Math.PI * 2);
-      ctx.arc(wx + 22, wy + 10, 8, 0, Math.PI * 2);
-      ctx.arc(wx + 30, wy + 12, 6, 0, Math.PI * 2);
+      ctx.arc(wx + cloudOffset - 10, wy + 12, 6, 0, Math.PI * 2);
+      ctx.arc(wx + cloudOffset - 2, wy + 10, 8, 0, Math.PI * 2);
+      ctx.arc(wx + cloudOffset + 6, wy + 12, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     } else if (timeOfDay === "dusk") {
       const grad = ctx.createLinearGradient(wx, wy, wx, wy + wh);
       grad.addColorStop(0, "#f97316");
-      grad.addColorStop(1, "#f43f5e");
+      grad.addColorStop(1, "#c026d3");
       ctx.fillStyle = grad;
       ctx.fillRect(wx, wy, ww, wh);
     } else {
-      // Night sky with stars
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(wx, wy, ww, wh);
       ctx.fillStyle = "#fef08a";
@@ -801,16 +847,16 @@ function drawRoomWindowsAndSunlight(
       ctx.fillRect(wx + 20, wy + 5, 2, 2);
     }
 
-    // Wooden window pane cross
+    // Window cross
     ctx.fillStyle = "#5c3a1a";
     ctx.fillRect(wx + ww / 2 - 1, wy, 2, wh);
     ctx.fillRect(wx, wy + wh / 2 - 1, ww, 2);
 
-    // Window sill
+    // Sill
     ctx.fillStyle = "#8b5a2b";
     ctx.fillRect(wx - 4, wy + wh, ww + 8, 4);
 
-    // Sunlight/Dusk light shafts falling across room floor
+    // Sunlight shafts
     if (timeOfDay === "day" || timeOfDay === "dusk") {
       ctx.save();
       const beamGrad = ctx.createLinearGradient(wx, wy + wh, wx + 40, wy + wh + 90);
@@ -837,14 +883,14 @@ function drawRoomWindowsAndSunlight(
 
 function drawRoomWallsAndShadows(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[number]) {
   ctx.save();
-  // North wall upper moulding & wallpaper
+  // Wall crown moulding & vintage wallpaper
   ctx.fillStyle = "#784421";
   ctx.fillRect(r.x, r.y, r.w, 18);
 
   ctx.fillStyle = "#5c3318";
   ctx.fillRect(r.x, r.y + 18, r.w, 4);
 
-  // Drop shadow cast from north wall onto floor
+  // Soft drop shadow
   const grad = ctx.createLinearGradient(r.x, r.y + 22, r.x, r.y + 36);
   grad.addColorStop(0, "rgba(45, 27, 14, 0.32)");
   grad.addColorStop(1, "rgba(45, 27, 14, 0)");
@@ -854,7 +900,7 @@ function drawRoomWallsAndShadows(ctx: CanvasRenderingContext2D, r: (typeof MAP.r
   ctx.restore();
 }
 
-function drawDetailedFurniture(
+function drawHandcraftedFurniture(
   ctx: CanvasRenderingContext2D,
   r: (typeof MAP.rooms)[number],
   t: number,
@@ -864,39 +910,40 @@ function drawDetailedFurniture(
   ctx.save();
 
   if (r.id === "living") {
-    // 1. Large 3-Seater Cozy Sofa
+    // 1. Sofa
     const sx = r.x + 38,
       sy = r.y + 115,
-      sw = 88,
+      sw = 92,
       sh = 44;
-    // Sofa shadow
     ctx.fillStyle = "rgba(45, 27, 14, 0.24)";
     roundRect(ctx, sx - 2, sy + 4, sw + 4, sh, 8);
     ctx.fill();
 
-    // Sofa back
     ctx.fillStyle = "#9a3412";
     roundRect(ctx, sx, sy, sw, 18, 6);
     ctx.fill();
 
-    // Sofa cushions
     ctx.fillStyle = "#ea580c";
     roundRect(ctx, sx + 4, sy + 14, sw - 8, 26, 6);
     ctx.fill();
-    // Cushion seams
-    ctx.fillStyle = "#c2410c";
-    ctx.fillRect(sx + 30, sy + 14, 2, 26);
-    ctx.fillRect(sx + 58, sy + 14, 2, 26);
 
-    // Sofa armrests
+    ctx.fillStyle = "#c2410c";
+    ctx.fillRect(sx + 32, sy + 14, 2, 26);
+    ctx.fillRect(sx + 60, sy + 14, 2, 26);
+
     ctx.fillStyle = "#7c2d12";
     roundRect(ctx, sx - 2, sy + 8, 10, 32, 4);
     ctx.fill();
     roundRect(ctx, sx + sw - 8, sy + 8, 10, 32, 4);
     ctx.fill();
 
-    // 2. Coffee Table with Steaming Mug
-    const tx = r.x + 148,
+    // Folded throw blanket on couch
+    ctx.fillStyle = "#fde047";
+    roundRect(ctx, sx + sw - 26, sy + 16, 18, 22, 3);
+    ctx.fill();
+
+    // 2. Oak Coffee Table with Steaming Cocoa
+    const tx = r.x + 150,
       ty = r.y + 124,
       tw = 56,
       th = 28;
@@ -911,43 +958,46 @@ function drawDetailedFurniture(
     roundRect(ctx, tx + 4, ty + 3, tw - 8, th - 6, 3);
     ctx.fill();
 
-    // Steaming coffee mug
-    ctx.font = "14px sans-serif";
-    ctx.fillText("☕", tx + 20, ty + 18);
+    // Ceramic cup with steam
+    ctx.fillStyle = "#f8fafc";
+    roundRect(ctx, tx + 20, ty + 10, 12, 10, 2);
+    ctx.fill();
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(tx + 22, ty + 11, 8, 3);
     // Rising steam
-    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-    const steamY = (t * 12) % 10;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+    const sY = (t * 12) % 10;
     ctx.beginPath();
-    ctx.arc(tx + 28, ty + 10 - steamY, 1.5, 0, Math.PI * 2);
+    ctx.arc(tx + 26, ty + 6 - sY, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3. Flat / CRT TV Console with Screen Light
-    const tvX = r.x + 136,
+    // 3. Retro CRT Television
+    const tvX = r.x + 138,
       tvY = r.y + 36,
       tvW = 68,
-      tvH = 22;
-    // Stand
+      tvH = 24;
     ctx.fillStyle = "#334155";
     roundRect(ctx, tvX, tvY, tvW, tvH, 4);
     ctx.fill();
 
-    // Screen
+    // Animated Pixel Landscape on Screen
     ctx.fillStyle = "#0284c7";
     ctx.globalAlpha = 0.85 * flicker;
     roundRect(ctx, tvX + 4, tvY + 3, tvW - 8, tvH - 6, 3);
     ctx.fill();
-    // Screen graphics
-    ctx.fillStyle = "#38bdf8";
-    ctx.fillRect(tvX + 8, tvY + 6, 20, 6);
-    ctx.fillStyle = "#a7f3d0";
-    ctx.fillRect(tvX + 32, tvY + 9, 14, 5);
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(tvX + 6, tvY + 14, tvW - 12, 5);
+    ctx.fillStyle = "#fbbf24";
+    ctx.beginPath();
+    ctx.arc(tvX + tvW - 14, tvY + 8, 3, 0, Math.PI * 2);
+    ctx.fill();
     ctx.globalAlpha = 1;
 
-    // 4. Bookshelf with Colorful Books
+    // 4. Bookshelf & Wall Clock
     const bkX = r.x + r.w - 76,
       bkY = r.y + 32,
       bkW = 60,
-      bkH = 34;
+      bkH = 36;
     ctx.fillStyle = "#78350f";
     roundRect(ctx, bkX, bkY, bkW, bkH, 4);
     ctx.fill();
@@ -955,14 +1005,23 @@ function drawDetailedFurniture(
     const bookColors = ["#ef4444", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
     bookColors.forEach((bc, idx) => {
       ctx.fillStyle = bc;
-      ctx.fillRect(bkX + 6 + idx * 8, bkY + 6, 6, 22);
+      ctx.fillRect(bkX + 6 + idx * 8, bkY + 6, 6, 24);
     });
 
-    // 5. Potted Monstera House Plant
-    ctx.font = "24px sans-serif";
-    ctx.fillText("🪴", r.x + 22, r.y + r.h - 22);
+    // 5. Leafy House Plant (Monstera in clay pot)
+    const px = r.x + 36,
+      py = r.y + r.h - 32;
+    ctx.fillStyle = "#c2410c";
+    roundRect(ctx, px - 6, py, 14, 12, 2);
+    ctx.fill();
+    ctx.fillStyle = "#15803d";
+    ctx.beginPath();
+    ctx.ellipse(px - 4, py - 4, 8, 6, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(px + 6, py - 6, 9, 6, 0.4, 0, Math.PI * 2);
+    ctx.ellipse(px + 1, py - 10, 7, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
   } else if (r.id === "kitchen") {
-    // 1. Kitchen Counter & Cabinets
+    // 1. Countertop & Double Sink
     const kx = r.x + 16,
       ky = r.y + 26,
       kw = r.w - 32,
@@ -974,21 +1033,26 @@ function drawDetailedFurniture(
     roundRect(ctx, kx + 2, ky + 2, kw - 4, 12, 3);
     ctx.fill();
 
-    // Dual stainless sink with tap
+    // Chrome Sink & Curved Tap
     ctx.fillStyle = "#94a3b8";
-    roundRect(ctx, kx + 40, ky + 4, 28, 16, 2);
+    roundRect(ctx, kx + 38, ky + 4, 28, 16, 2);
     ctx.fill();
     ctx.fillStyle = "#38bdf8";
-    ctx.fillRect(kx + 44, ky + 7, 20, 10);
+    ctx.fillRect(kx + 42, ky + 7, 20, 10);
+    // Tap
+    ctx.fillStyle = "#64748b";
+    ctx.fillRect(kx + 50, ky + 2, 4, 4);
 
-    // Stove with burners & steaming pot
+    // Stove with boiling pot
     ctx.fillStyle = "#334155";
     roundRect(ctx, kx + 85, ky + 4, 26, 16, 2);
     ctx.fill();
-    ctx.font = "14px sans-serif";
-    ctx.fillText("🍲", kx + 90, ky + 16);
+    // Copper pot
+    ctx.fillStyle = "#ea580c";
+    roundRect(ctx, kx + 90, ky + 5, 16, 10, 2);
+    ctx.fill();
 
-    // 2. Vintage Refrigerator with Sticky Notes
+    // 2. Retro Pastel Mint Refrigerator
     const frX = kx + kw - 38,
       frY = ky - 4,
       frW = 34,
@@ -998,13 +1062,13 @@ function drawDetailedFurniture(
     ctx.fill();
     ctx.fillStyle = "#5eead4";
     ctx.fillRect(frX + 3, frY + 3, frW - 6, 16);
-    // Fridge notes
+    // Sticky memos
     ctx.fillStyle = "#fef08a";
     ctx.fillRect(frX + 8, frY + 24, 6, 6);
     ctx.fillStyle = "#fbcfe8";
     ctx.fillRect(frX + 18, frY + 28, 6, 6);
 
-    // 3. Dining Table & Matching Chairs
+    // 3. Dining Table & 2 Wooden Chairs
     const dX = r.x + 80,
       dY = r.y + 92,
       dW = 76,
@@ -1016,21 +1080,22 @@ function drawDetailedFurniture(
     ctx.fillStyle = "#a16207";
     roundRect(ctx, dX, dY, dW, dH, 6);
     ctx.fill();
-    ctx.fillStyle = "#ca8a04";
+    // Tablecloth
+    ctx.fillStyle = "#fef08a";
     roundRect(ctx, dX + 4, dY + 4, dW - 8, dH - 8, 4);
     ctx.fill();
 
-    // Table settings
-    ctx.font = "15px sans-serif";
-    ctx.fillText("🥪", dX + 18, dY + 26);
-    ctx.fillText("🧃", dX + 46, dY + 26);
+    // Croissant / bread on table
+    ctx.fillStyle = "#d97706";
+    ctx.beginPath();
+    ctx.ellipse(dX + 26, dY + 22, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
   } else if (r.id === "bedroom") {
-    // 1. Cozy Carved Wooden Double Bed
+    // 1. Cottage Double Bed
     const bx = r.x + 28,
       by = r.y + 44,
       bw = 72,
       bh = 96;
-    // Bed frame
     ctx.fillStyle = "#78350f";
     roundRect(ctx, bx, by, bw, bh, 6);
     ctx.fill();
@@ -1040,23 +1105,22 @@ function drawDetailedFurniture(
     roundRect(ctx, bx, by, bw, 18, 5);
     ctx.fill();
 
-    // Pillows
+    // Two fluffy pillows
     ctx.fillStyle = "#ffffff";
     roundRect(ctx, bx + 6, by + 18, 26, 16, 4);
     ctx.fill();
     roundRect(ctx, bx + 38, by + 18, 26, 16, 4);
     ctx.fill();
 
-    // Warm soft folded duvet
+    // Quilted duvet
     ctx.fillStyle = "#fef08a";
     roundRect(ctx, bx + 4, by + 36, bw - 8, bh - 40, 5);
     ctx.fill();
-    // Quilt stitch lines
     ctx.strokeStyle = "#eab308";
     ctx.lineWidth = 1;
     ctx.strokeRect(bx + 8, by + 40, bw - 16, bh - 48);
 
-    // 2. Nightstand with Glowing Lamp
+    // 2. Bedside Nightstand & Lamp
     const nsX = bx + bw + 10,
       nsY = by + 6,
       nsW = 28,
@@ -1068,9 +1132,18 @@ function drawDetailedFurniture(
     roundRect(ctx, nsX + 3, nsY + 3, nsW - 6, 10, 2);
     ctx.fill();
 
-    // Glowing Lamp
-    ctx.font = "16px sans-serif";
-    ctx.fillText("💡", nsX + 14, nsY + 12);
+    // Lamp
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillRect(nsX + 12, nsY + 12, 4, 8);
+    ctx.fillStyle = "#fef08a";
+    ctx.beginPath();
+    ctx.moveTo(nsX + 8, nsY + 12);
+    ctx.lineTo(nsX + 20, nsY + 12);
+    ctx.lineTo(nsX + 17, nsY + 4);
+    ctx.lineTo(nsX + 11, nsY + 4);
+    ctx.closePath();
+    ctx.fill();
+
     if (timeOfDay === "night" || timeOfDay === "dusk") {
       ctx.save();
       ctx.globalAlpha = 0.25 * flicker;
@@ -1081,7 +1154,7 @@ function drawDetailedFurniture(
       ctx.restore();
     }
 
-    // 3. Tall Wooden Wardrobe Closet
+    // 3. Vintage Double Wardrobe
     const wX = r.x + r.w - 56,
       wY = r.y + 40,
       wW = 42,
@@ -1089,18 +1162,16 @@ function drawDetailedFurniture(
     ctx.fillStyle = "#854d0e";
     roundRect(ctx, wX, wY, wW, wH, 5);
     ctx.fill();
-    // Louver doors
     ctx.fillStyle = "#a16207";
     roundRect(ctx, wX + 3, wY + 4, 16, wH - 8, 3);
     ctx.fill();
     roundRect(ctx, wX + 22, wY + 4, 16, wH - 8, 3);
     ctx.fill();
-    // Knobs
     ctx.fillStyle = "#fef08a";
     ctx.fillRect(wX + 16, wY + 38, 2, 4);
     ctx.fillRect(wX + 24, wY + 38, 2, 4);
   } else if (r.id === "bathroom") {
-    // 1. Porcelain Clawfoot Bathtub with Shimmering Water
+    // 1. Porcelain Clawfoot Bathtub with Shimmering Water & Foam
     const bx = r.x + 24,
       by = r.y + 34,
       bw = 76,
@@ -1112,7 +1183,6 @@ function drawDetailedFurniture(
     ctx.fill();
     ctx.stroke();
 
-    // Shimmering water inside
     ctx.fillStyle = "#bfdbfe";
     roundRect(ctx, bx + 6, by + 6, bw - 12, bh - 12, 10);
     ctx.fill();
@@ -1127,11 +1197,12 @@ function drawDetailedFurniture(
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // Golden faucets
+    // Brass claw feet
     ctx.fillStyle = "#eab308";
-    ctx.fillRect(bx + bw - 10, by + bh / 2 - 3, 6, 6);
+    ctx.fillRect(bx + 6, by + bh, 4, 4);
+    ctx.fillRect(bx + bw - 10, by + bh, 4, 4);
 
-    // 2. Vanity Mirror & Pedestal Sink
+    // 2. Pedestal Sink & Oval Mirror
     const sX = r.x + r.w - 54,
       sY = r.y + 30,
       sW = 34,
@@ -1143,11 +1214,18 @@ function drawDetailedFurniture(
     roundRect(ctx, sX + 3, sY + 3, sW - 6, sH - 6, 4);
     ctx.fill();
 
-    ctx.font = "18px sans-serif";
-    ctx.fillText("🚿", r.x + 115, r.y + 46);
-    ctx.fillText("🧼", r.x + r.w - 38, r.y + 86);
+    // Mirror glare line
+    ctx.fillStyle = "#ffffff";
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.moveTo(sX + 6, sY + 6);
+    ctx.lineTo(sX + 16, sY + 6);
+    ctx.lineTo(sX + 8, sY + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
   } else if (r.id === "room1") {
-    // Game/Entertainment Battlestation
+    // 1. Gamer Battlestation (Dual monitors & RGB keyboard)
     const dX = r.x + 36,
       dY = r.y + 44,
       dW = 100,
@@ -1156,30 +1234,54 @@ function drawDetailedFurniture(
     roundRect(ctx, dX, dY, dW, dH, 4);
     ctx.fill();
 
-    // Dual gaming monitors
+    // Dual monitors
     ctx.fillStyle = "#0f172a";
     roundRect(ctx, dX + 10, dY + 6, 36, 20, 3);
     ctx.fill();
     roundRect(ctx, dX + 50, dY + 6, 36, 20, 3);
     ctx.fill();
 
-    // Monitor screens (Gamer neon glow)
-    ctx.fillStyle = "#06b6d4";
+    // Left monitor (Discord Chat UI)
+    ctx.fillStyle = "#5865F2";
     ctx.globalAlpha = 0.85 * flicker;
     roundRect(ctx, dX + 12, dY + 8, 32, 16, 2);
     ctx.fill();
+    // Chat lines
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(dX + 15, dY + 11, 14, 2);
+    ctx.fillRect(dX + 15, dY + 15, 20, 2);
 
+    // Right monitor (Cyberpunk/Game Screen)
     ctx.fillStyle = "#a855f7";
     roundRect(ctx, dX + 52, dY + 8, 32, 16, 2);
     ctx.fill();
+    ctx.fillStyle = "#22d3ee";
+    ctx.fillRect(dX + 56, dY + 12, 16, 4);
     ctx.globalAlpha = 1;
 
-    // Gaming chair & accessories
-    ctx.font = "22px sans-serif";
-    ctx.fillText("🎮", r.x + 82, r.y + 96);
-    ctx.fillText("🎸", r.x + r.w - 42, r.y + 82);
+    // RGB Keyboard
+    const keyColors = ["#ef4444", "#3b82f6", "#10b981", "#f59e0b"];
+    keyColors.forEach((kc, i) => {
+      ctx.fillStyle = kc;
+      ctx.fillRect(dX + 26 + i * 8, dY + 28, 6, 3);
+    });
+
+    // 2. Electric Guitar on Stand
+    const gx = r.x + r.w - 38,
+      gy = r.y + 70;
+    // Guitar body
+    ctx.fillStyle = "#ea580c";
+    ctx.beginPath();
+    ctx.ellipse(gx, gy + 16, 8, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Neck
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(gx - 2, gy - 12, 4, 28);
+    // Headstock
+    ctx.fillStyle = "#451a03";
+    ctx.fillRect(gx - 3, gy - 16, 6, 5);
   } else if (r.id === "room2") {
-    // Study Room: Grand Bookcase, Desk & Astronomical Telescope
+    // 1. Two-Tier Grand Wall Library
     const bkW = 52,
       bkH = 92;
     ctx.fillStyle = "#78350f";
@@ -1194,7 +1296,7 @@ function drawDetailedFurniture(
       });
     }
 
-    // Classic Executive Desk
+    // 2. Executive Desk & Banker's Lamp
     const edX = r.x + 36,
       edY = r.y + 54,
       edW = 90,
@@ -1206,14 +1308,41 @@ function drawDetailedFurniture(
     roundRect(ctx, edX + 4, edY + 4, edW - 8, edH - 8, 3);
     ctx.fill();
 
-    // Banker's Lamp
+    // Emerald Banker's Lamp
     ctx.fillStyle = "#15803d";
     roundRect(ctx, edX + 12, edY + 8, 16, 8, 2);
     ctx.fill();
+    ctx.fillStyle = "#fbbf24";
+    ctx.fillRect(edX + 18, edY + 16, 4, 6);
 
-    ctx.font = "22px sans-serif";
-    ctx.fillText("📚", edX + 60, edY + 28);
-    ctx.fillText("🔭", r.x + r.w - 44, r.y + 150);
+    // Open Book
+    ctx.fillStyle = "#fef9c3";
+    roundRect(ctx, edX + 40, edY + 14, 22, 14, 2);
+    ctx.fill();
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(edX + 50, edY + 14, 1, 14);
+
+    // 3. Brass Telescope
+    const tx = r.x + r.w - 44,
+      ty = r.y + 160;
+    ctx.fillStyle = "#d97706";
+    // Tripod legs
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#78350f";
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - 12, ty + 24);
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx + 12, ty + 24);
+    ctx.stroke();
+    // Barrel
+    ctx.save();
+    ctx.translate(tx, ty);
+    ctx.rotate(-0.5);
+    ctx.fillStyle = "#f59e0b";
+    roundRect(ctx, -14, -4, 28, 8, 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   ctx.restore();
@@ -1224,25 +1353,24 @@ function drawRoomLabel(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
   ctx.save();
   ctx.font = "bold 11px sans-serif";
   const tw = ctx.measureText(label).width;
-  const pw = tw + 20;
+  const pw = tw + 18;
   const ph = 20;
-  const px = r.x + 12;
+  const px = r.x + 10;
   const py = r.y + 26;
 
-  // Wooden Pill Badge
-  ctx.fillStyle = isActive ? "#8b5a2b" : "rgba(255, 250, 240, 0.92)";
-  roundRect(ctx, px, py, pw, ph, 10);
+  ctx.fillStyle = isActive ? "#5c3318" : "rgba(255, 250, 240, 0.94)";
+  roundRect(ctx, px, py, pw, ph, 8);
   ctx.fill();
 
-  ctx.strokeStyle = isActive ? "#5c3a1a" : "#d6c2a8";
+  ctx.strokeStyle = isActive ? "#eab308" : "#d6c2a8";
   ctx.lineWidth = 1.5;
-  roundRect(ctx, px, py, pw, ph, 10);
+  roundRect(ctx, px, py, pw, ph, 8);
   ctx.stroke();
 
-  ctx.fillStyle = isActive ? "#ffffff" : "#45240c";
+  ctx.fillStyle = isActive ? "#fef3c7" : "#45240c";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, px + 10, py + ph / 2 + 1);
+  ctx.fillText(label, px + 9, py + ph / 2 + 1);
 
   ctx.restore();
 }
@@ -1250,58 +1378,58 @@ function drawRoomLabel(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[numb
 function drawHouseArchitecture(ctx: CanvasRenderingContext2D) {
   ctx.save();
 
-  // Outer thick timber walls
-  ctx.strokeStyle = "#45240c";
-  ctx.lineWidth = 14;
-  ctx.strokeRect(7, 7, MAP.width - 14, MAP.height - 14);
-
-  ctx.strokeStyle = "#8b5a2b";
-  ctx.lineWidth = 8;
-  ctx.strokeRect(7, 7, MAP.width - 14, MAP.height - 14);
-
-  // Inner dividing walls
-  ctx.strokeStyle = "#78350f";
+  // Dividing interior timber walls
+  ctx.strokeStyle = "#5c3318";
   ctx.lineWidth = 8;
 
-  // Vertical dividing walls
-  line(ctx, 346, 14, 346, 194);
-  line(ctx, 616, 14, 616, 194);
-  line(ctx, 286, 300, 286, 586);
-  line(ctx, 586, 194, 586, 586);
+  // Vertical walls
+  line(ctx, 354, 28, 354, 190);
+  line(ctx, 624, 28, 624, 190);
+  line(ctx, 290, 310, 290, 572);
+  line(ctx, 588, 210, 588, 572);
 
-  // Horizontal dividing walls
-  line(ctx, 14, 286, 346, 286);
-  line(ctx, 300, 180, 616, 180);
+  // Horizontal walls
+  line(ctx, 28, 290, 354, 290);
+  line(ctx, 310, 190, 624, 190);
 
-  // Doorway openings (Carve passages with floor texture & wooden thresholds)
+  // Doorway passages
   for (const d of DOORS) {
     ctx.fillStyle = "#dfb47f";
-    ctx.fillRect(d.x - 3, d.y - 3, d.w + 6, d.h + 6);
+    ctx.fillRect(d.x - 2, d.y - 2, d.w + 4, d.h + 4);
 
-    // Wooden door threshold frame
-    ctx.strokeStyle = "#a16207";
+    ctx.strokeStyle = "#8b5a2b";
     ctx.lineWidth = 2;
     ctx.strokeRect(d.x, d.y, d.w, d.h);
 
-    // Welcome mat / threshold rug
+    // Welcome mat fringe
     ctx.fillStyle = "rgba(180, 83, 9, 0.35)";
-    ctx.fillRect(d.x - 2, d.y - 2, d.w + 4, 4);
-    ctx.fillRect(d.x - 2, d.y + d.h - 2, d.w + 4, 4);
+    ctx.fillRect(d.x - 1, d.y - 1, d.w + 2, 3);
+    ctx.fillRect(d.x - 1, d.y + d.h - 2, d.w + 2, 3);
   }
+
+  // Outer Timber House Frame
+  ctx.strokeStyle = "#45240c";
+  ctx.lineWidth = 12;
+  ctx.strokeRect(22, 22, MAP.width - 44, MAP.height - 44);
+
+  ctx.strokeStyle = "#784421";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(22, 22, MAP.width - 44, MAP.height - 44);
 
   ctx.restore();
 }
 
-function drawFireplaceGlow(
+function drawLivingFireplace(
   ctx: CanvasRenderingContext2D,
   flicker: number,
-  timeOfDay: "day" | "dusk" | "night"
+  timeOfDay: "day" | "dusk" | "night",
+  t: number
 ) {
   ctx.save();
-  const fx = 60;
+  const fx = 68;
   const fy = 62;
 
-  // Stone Fireplace Mantle
+  // Stone Brick Fireplace Mantel
   ctx.fillStyle = "#475569";
   roundRect(ctx, fx - 24, fy - 18, 48, 36, 4);
   ctx.fill();
@@ -1309,29 +1437,36 @@ function drawFireplaceGlow(
   roundRect(ctx, fx - 16, fy - 8, 32, 24, 3);
   ctx.fill();
 
-  // Fire Flame
-  ctx.font = "20px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("🔥", fx, fy + 4);
+  // Dancing Flames
+  ctx.fillStyle = "#ea580c";
+  ctx.beginPath();
+  ctx.arc(fx - 4, fy + 6, 6 + Math.sin(t * 8) * 1.5, 0, Math.PI * 2);
+  ctx.arc(fx + 4, fy + 5, 7 + Math.cos(t * 9) * 1.5, 0, Math.PI * 2);
+  ctx.arc(fx, fy + 2, 5 + Math.sin(t * 11) * 1.2, 0, Math.PI * 2);
+  ctx.fill();
 
-  // Warm ambient light radius
-  const intensity = timeOfDay === "night" ? 0.38 : timeOfDay === "dusk" ? 0.28 : 0.16;
-  const rad = ctx.createRadialGradient(fx, fy, 4, fx, fy, 110);
+  ctx.fillStyle = "#fbbf24";
+  ctx.beginPath();
+  ctx.arc(fx, fy + 5, 4 + Math.sin(t * 10) * 1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Warm ambient radial lighting
+  const intensity = timeOfDay === "night" ? 0.42 : timeOfDay === "dusk" ? 0.32 : 0.18;
+  const rad = ctx.createRadialGradient(fx, fy, 4, fx, fy, 120);
   rad.addColorStop(0, `rgba(245, 158, 11, ${intensity * flicker})`);
-  rad.addColorStop(0.5, `rgba(234, 88, 12, ${(intensity * 0.5) * flicker})`);
+  rad.addColorStop(0.5, `rgba(234, 88, 12, ${intensity * 0.5 * flicker})`);
   rad.addColorStop(1, "rgba(245, 158, 11, 0)");
   ctx.fillStyle = rad;
   ctx.beginPath();
-  ctx.arc(fx, fy, 110, 0, Math.PI * 2);
+  ctx.arc(fx, fy, 120, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
 }
 
 /**
- * SD Proportion Pixel-friendly Character with 4-Direction Walk/Idle Animation
- * Discord Avatar naturally integrated as the character's face.
+ * SD Proportion Pixel Character with 4-Direction Walk/Idle Animation
+ * Discord Avatar integrated as face with cute anime/pixel blush cheeks
  */
 function drawPixelCharacter(
   ctx: CanvasRenderingContext2D,
@@ -1350,7 +1485,7 @@ function drawPixelCharacter(
   const px = pos.x;
   const py = pos.y;
 
-  // 1. Selection Highlight Ring
+  // 1. Selection Ring
   if (isSelected) {
     ctx.strokeStyle = "#38bdf8";
     ctx.lineWidth = 2.5;
@@ -1360,37 +1495,33 @@ function drawPixelCharacter(
   }
 
   // 2. Soft Ground Shadow
-  ctx.fillStyle = "rgba(45, 27, 14, 0.24)";
+  ctx.fillStyle = "rgba(45, 27, 14, 0.25)";
   ctx.beginPath();
   ctx.ellipse(px, py + 10, 13, 5.5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // 3. Feet / Stepping Shoes (4-Direction walking cycle)
+  // 3. Feet / Stepping Shoes (4-Direction cycle)
   ctx.fillStyle = "#2d1b0e";
   const stepOffset = isMoving ? Math.sin(walkCycle) * 3.5 : 0;
 
   if (facing === "down" || facing === "up") {
-    // Alternating left/right foot forward/backward
     ctx.fillRect(px - 7, py + 6 + stepOffset, 5, 4);
     ctx.fillRect(px + 2, py + 6 - stepOffset, 5, 4);
   } else if (facing === "left") {
     ctx.fillRect(px - 6 + stepOffset, py + 6, 6, 4);
     ctx.fillRect(px - 1 - stepOffset, py + 6, 5, 4);
   } else {
-    // right
     ctx.fillRect(px - 5 - stepOffset, py + 6, 5, 4);
     ctx.fillRect(px + stepOffset, py + 6, 6, 4);
   }
 
-  // 4. Body / Cozy Sweater (SD proportion)
+  // 4. Body / Sweater
   const bodyColor = skin.color || (isMe ? "#8b5a2b" : "#6b7280");
   ctx.fillStyle = bodyColor;
   roundRect(ctx, px - 9, py - 5, 18, 12, 3);
   ctx.fill();
 
-  // Sweater Details
   if (facing === "down") {
-    // White collar undershirt peek
     ctx.fillStyle = "#ffffff";
     ctx.globalAlpha = 0.6;
     ctx.fillRect(px - 3, py - 5, 6, 2.5);
@@ -1404,35 +1535,30 @@ function drawPixelCharacter(
   }
 
   // 5. Head / Hair Frame & Discord Avatar Face
-  // Hair base / outline
   ctx.fillStyle = "#3f2314";
   roundRect(ctx, px - 14, py - 29, 28, 26, 7);
   ctx.fill();
 
   if (facing === "up") {
-    // Back of head (full hair texture)
+    // Back of head with hair texture
     ctx.fillStyle = "#4a2c19";
     roundRect(ctx, px - 12, py - 27, 24, 22, 6);
     ctx.fill();
-    // Hair strand details
     ctx.fillStyle = "#351e11";
     ctx.fillRect(px - 8, py - 20, 4, 10);
     ctx.fillRect(px + 4, py - 20, 4, 10);
   } else {
-    // Facing down, left, or right: Integrated Discord Avatar Face
     ctx.save();
     ctx.beginPath();
     roundRect(ctx, px - 12, py - 27, 24, 22, 5);
     ctx.clip();
 
     if (avatar) {
-      // Angle avatar slightly based on facing
       const cropX = facing === "left" ? px - 14 : facing === "right" ? px - 10 : px - 12;
       ctx.drawImage(avatar, cropX, py - 27, 24, 22);
     } else {
       ctx.fillStyle = "#fed7aa";
       ctx.fillRect(px - 12, py - 27, 24, 22);
-      // Simple pixel eyes if avatar isn't loaded
       ctx.fillStyle = "#2d1b0e";
       if (facing === "down") {
         ctx.fillRect(px - 6, py - 18, 3, 3);
@@ -1445,9 +1571,17 @@ function drawPixelCharacter(
         ctx.fillRect(px + 6, py - 18, 3, 3);
       }
     }
+
+    // Cute blush cheeks
+    ctx.fillStyle = "rgba(244, 63, 94, 0.4)";
+    ctx.beginPath();
+    ctx.arc(px - 7, py - 12, 2.5, 0, Math.PI * 2);
+    ctx.arc(px + 7, py - 12, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
 
-    // Cute bangs / hair border over face top
+    // Cute bangs / hair border
     ctx.fillStyle = "#3f2314";
     ctx.fillRect(px - 12, py - 29, 24, 4);
     ctx.fillRect(px - 12, py - 26, 4, 6);
@@ -1460,7 +1594,7 @@ function drawPixelCharacter(
   roundRect(ctx, px - 13, py - 28, 26, 24, 6);
   ctx.stroke();
 
-  // 6. Hat / Accessory
+  // 6. Hat
   if (skin.hat && skin.hat !== "none") {
     const hats: Record<string, string> = {
       cap: "🧢",
@@ -1488,7 +1622,7 @@ function drawPixelCharacter(
   roundRect(ctx, nx, ny, tw, 16, 8);
   ctx.stroke();
 
-  // Tiny active status dot
+  // Active status dot
   ctx.fillStyle = isMe ? "#22c55e" : "#38bdf8";
   ctx.beginPath();
   ctx.arc(nx + 6.5, ny + 8, 2.5, 0, Math.PI * 2);
@@ -1502,7 +1636,7 @@ function drawPixelCharacter(
 }
 
 /**
- * Animated Speech Bubble with cute tail
+ * Speech Bubble with cute tail
  */
 function drawSpeechBubble(ctx: CanvasRenderingContext2D, pos: Pos, text: string) {
   ctx.save();
@@ -1515,31 +1649,28 @@ function drawSpeechBubble(ctx: CanvasRenderingContext2D, pos: Pos, text: string)
   const x = pos.x - w / 2;
   const y = pos.y - 70 - h;
 
-  // Bubble drop shadow
-  ctx.fillStyle = "rgba(45, 27, 14, 0.16)";
+  ctx.fillStyle = "rgba(45, 27, 14, 0.18)";
   roundRect(ctx, x + 2, y + 2, w, h, 10);
   ctx.fill();
 
-  // Bubble body
-  ctx.fillStyle = "#fffaf0";
+  ctx.fillStyle = "#fffdf7";
   ctx.strokeStyle = "#8b5a2b";
   ctx.lineWidth = 1.8;
   roundRect(ctx, x, y, w, h, 10);
   ctx.fill();
   ctx.stroke();
 
-  // Bubble downward tail
+  // Tail
   ctx.beginPath();
   ctx.moveTo(pos.x - 6, y + h - 1);
   ctx.lineTo(pos.x + 6, y + h - 1);
   ctx.lineTo(pos.x, y + h + 8);
   ctx.closePath();
-  ctx.fillStyle = "#fffaf0";
+  ctx.fillStyle = "#fffdf7";
   ctx.fill();
   ctx.strokeStyle = "#8b5a2b";
   ctx.stroke();
 
-  // Text inside bubble
   ctx.fillStyle = "#2d1b0e";
   ctx.textAlign = "center";
   lines.forEach((l, i) => ctx.fillText(l, pos.x, y + 17 + i * 16));
@@ -1548,7 +1679,7 @@ function drawSpeechBubble(ctx: CanvasRenderingContext2D, pos: Pos, text: string)
 }
 
 /**
- * Natural Lighting and Vignette Overlay for Day / Dusk / Night
+ * Time of Day Atmosphere & Night Vignette
  */
 function drawTimeOfDayLighting(
   ctx: CanvasRenderingContext2D,
@@ -1560,20 +1691,19 @@ function drawTimeOfDayLighting(
   ctx.save();
 
   if (timeOfDay === "night") {
-    // Night mood: Deep navy ambient overlay with cutouts for lamp glows
+    // Deep starry navy wash
     ctx.fillStyle = "rgba(15, 23, 42, 0.48)";
     ctx.fillRect(0, 0, MAP.width, MAP.height);
 
-    // Soft lantern light around the player's feet
-    const myLight = ctx.createRadialGradient(myPos.x, myPos.y, 4, myPos.x, myPos.y, 75);
-    myLight.addColorStop(0, `rgba(254, 240, 138, ${0.3 * flicker})`);
+    // Warm lantern light around the player's feet
+    const myLight = ctx.createRadialGradient(myPos.x, myPos.y, 4, myPos.x, myPos.y, 80);
+    myLight.addColorStop(0, `rgba(254, 240, 138, ${0.32 * flicker})`);
     myLight.addColorStop(1, "rgba(254, 240, 138, 0)");
     ctx.fillStyle = myLight;
     ctx.beginPath();
-    ctx.arc(myPos.x, myPos.y, 75, 0, Math.PI * 2);
+    ctx.arc(myPos.x, myPos.y, 80, 0, Math.PI * 2);
     ctx.fill();
 
-    // Others' lantern light
     for (const o of others) {
       const oLight = ctx.createRadialGradient(o.pos.x, o.pos.y, 4, o.pos.x, o.pos.y, 55);
       oLight.addColorStop(0, `rgba(254, 240, 138, ${0.2 * flicker})`);
@@ -1584,11 +1714,10 @@ function drawTimeOfDayLighting(
       ctx.fill();
     }
   } else if (timeOfDay === "dusk") {
-    // Sunset mood: Warm rose-amber wash
     ctx.fillStyle = "rgba(249, 115, 22, 0.12)";
     ctx.fillRect(0, 0, MAP.width, MAP.height);
   } else {
-    // Daytime: Warm cozy sunlight glow from top
+    // Daytime sunlight
     const sunGlow = ctx.createRadialGradient(MAP.width * 0.5, 60, 0, MAP.width * 0.5, 60, 560);
     sunGlow.addColorStop(0, "rgba(254, 240, 138, 0.16)");
     sunGlow.addColorStop(1, "rgba(245, 236, 224, 0)");
@@ -1596,7 +1725,7 @@ function drawTimeOfDayLighting(
     ctx.fillRect(0, 0, MAP.width, MAP.height);
   }
 
-  // Cozy room edge vignette
+  // Warm edge vignette
   const vig = ctx.createRadialGradient(
     MAP.width / 2,
     MAP.height / 2,
@@ -1673,5 +1802,3 @@ function PadButton({ onMove }: { onMove: (dx: number, dy: number) => void }) {
     </div>
   );
 }
-
-
