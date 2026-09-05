@@ -282,13 +282,18 @@ async function grantHouseChannelView(guild, channelId, userId) {
   if (!guild || !channelId || !userId) return;
   const ch = await guild.channels.fetch(channelId).catch(()=>null);
   if (!ch) return;
-  try { await ch.permissionOverwrites.edit(userId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }); } catch (e) { console.warn('[house grant]', e.message); }
+  const cleanId = String(userId).replace(/[<@!>]/g, '').trim();
+  try {
+    await guild.members.fetch(cleanId).catch(()=>null);
+    await ch.permissionOverwrites.edit(cleanId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+  } catch (e) { console.warn('[house grant]', e.message); }
 }
 async function revokeHouseChannelView(guild, channelId, userId) {
   if (!guild || !channelId || !userId) return;
   const ch = await guild.channels.fetch(channelId).catch(()=>null);
   if (!ch) return;
-  try { await ch.permissionOverwrites.delete(userId).catch(()=>{}); } catch (e) { console.warn('[house revoke]', e.message); }
+  const cleanId = String(userId).replace(/[<@!>]/g, '').trim();
+  try { await ch.permissionOverwrites.delete(cleanId).catch(()=>{}); } catch (e) { console.warn('[house revoke]', e.message); }
 }
 async function getRoomByChannel(channelId) {
   const { rows } = await pool.query(`SELECT id FROM rooms WHERE channel_id=$1 LIMIT 1`, [channelId]);

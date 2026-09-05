@@ -3,7 +3,8 @@
 /* 둥근모꼴 (DungGeunMo) - 픽셀 둥근 폰트 원본 */
 @font-face {
   font-family: "DungGeunMo";
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/DungGeunMo.woff") format("woff");
+  src: url("https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/DungGeunMo.woff") format("woff"),
+       url("https://cdn.jsdelivr.net/gh/fonts-archive/DungGeunMo/DungGeunMo.woff2") format("woff2");
   font-weight: normal;
   font-style: normal;
   font-display: swap;
