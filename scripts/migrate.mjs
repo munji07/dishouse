@@ -74,7 +74,8 @@ const { rows: pgProgress } = await pool.query(`SELECT count(*)::int AS c FROM us
 console.log("user_progress rows:", pgProgress[0].c);
 const { rows: pgInv } = await pool.query(`SELECT count(*)::int AS c FROM dishouse_inventory`);
 console.log("dishouse_inventory rows:", pgInv[0].c);
-await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_houses (id SERIAL PRIMARY KEY, guild_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_name TEXT NOT NULL DEFAULT '', floor INT NOT NULL, channel_id TEXT, channel_name TEXT, visibility TEXT NOT NULL DEFAULT 'invite_only', category_id TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(guild_id, owner_id), UNIQUE(guild_id, floor))`);
+await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_houses (id SERIAL PRIMARY KEY, guild_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_name TEXT NOT NULL DEFAULT '', floor INT NOT NULL, channel_id TEXT, channel_name TEXT, visibility TEXT NOT NULL DEFAULT 'invite_only', category_id TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(guild_id, owner_id))`);
+await pool.query(`ALTER TABLE dishouse_houses DROP CONSTRAINT IF EXISTS dishouse_houses_guild_id_floor_key`).catch(()=>{});
 await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_house_invites (house_id INT NOT NULL REFERENCES dishouse_houses(id) ON DELETE CASCADE, target_id TEXT NOT NULL, invited_by TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (house_id, target_id))`);
 await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_house_rooms (house_id INT NOT NULL REFERENCES dishouse_houses(id) ON DELETE CASCADE, room_id TEXT NOT NULL, channel_id TEXT NOT NULL, channel_name TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (house_id, room_id), UNIQUE(channel_id))`);
 await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS owner_name TEXT NOT NULL DEFAULT ''`).catch(()=>{});

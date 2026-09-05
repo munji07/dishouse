@@ -202,6 +202,7 @@ async function ensureHouseTables() {
   await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS owner_name TEXT NOT NULL DEFAULT ''`).catch(()=>{});
   await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'invite_only'`).catch(()=>{});
   await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS category_id TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE dishouse_houses DROP CONSTRAINT IF EXISTS dishouse_houses_guild_id_floor_key`).catch(()=>{});
 }
 ensureHouseTables().catch(()=>{});
 function formatHouseChannelName(floor, displayName) {
@@ -262,20 +263,15 @@ async function deleteHouse(guild, house) {
   }
   await pool.query(`DELETE FROM dishouse_houses WHERE id=$1`, [house.id]);
 }
-async function getNextHouseFloor(guildId) {
-  const { rows } = await pool.query(`SELECT COALESCE(MAX(floor),4)+1 AS nxt FROM dishouse_houses WHERE guild_id=$1`, [guildId]);
-  return Number(rows[0]?.nxt || 5);
-}
 async function createHouseForUser(guild, ownerId, displayName) {
   await ensureHouseTables();
   const owner = await guild.members.fetch(String(ownerId)).catch(() => null);
   if (!owner) throw new Error("개인 방을 만들려면 해당 Discord 서버에 가입되어 있어야 합니다.");
   const existing = await getHouseByOwner(guild.id, ownerId);
-  if (existing?.category_id) {
-    const { rows } = await pool.query(`SELECT room_id FROM dishouse_house_rooms WHERE house_id=$1`, [existing.id]);
-    if (rows.length === ROOM_IDS.length) return existing;
-  }
-  const floor = existing?.floor ?? await getNextHouseFloor(guild.id);
+  const existingRooms = existing?.category_id
+    ? await pool.query(`SELECT room_id, channel_id FROM dishouse_house_rooms WHERE house_id=$1`, [existing.id]).then(result => result.rows)
+    : [];
+  const floor = 5;
   const houseName = formatHouseChannelName(floor, displayName);
   const overwrites = [
     { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -288,8 +284,9 @@ async function createHouseForUser(guild, ownerId, displayName) {
 
   const roomRows = [];
   for (const roomId of ROOM_IDS) {
-    let room = roomId === "living" && existing?.channel_id
-      ? await guild.channels.fetch(existing.channel_id).catch(()=>null)
+    const storedRoom = existingRooms.find(room => room.room_id === roomId);
+    let room = storedRoom
+      ? await guild.channels.fetch(storedRoom.channel_id).catch(() => null)
       : null;
     if (room) {
       await room.setName(ROOM_LABEL[roomId]).catch(()=>{});
@@ -300,7 +297,7 @@ async function createHouseForUser(guild, ownerId, displayName) {
     roomRows.push({ roomId, channelId: room.id, channelName: room.name });
   }
   const living = roomRows.find(room => room.roomId === "living");
-  const { rows } = await pool.query(`INSERT INTO dishouse_houses (guild_id, owner_id, owner_name, floor, channel_id, channel_name, visibility, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (guild_id, owner_id) DO UPDATE SET channel_id=EXCLUDED.channel_id, channel_name=EXCLUDED.channel_name, category_id=EXCLUDED.category_id, owner_name=EXCLUDED.owner_name, updated_at=now() RETURNING *`, [guild.id, ownerId, displayName, floor, living.channelId, houseName, 'invite_only', category.id]);
+  const { rows } = await pool.query(`INSERT INTO dishouse_houses (guild_id, owner_id, owner_name, floor, channel_id, channel_name, visibility, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (guild_id, owner_id) DO UPDATE SET floor=EXCLUDED.floor, channel_id=EXCLUDED.channel_id, channel_name=EXCLUDED.channel_name, category_id=EXCLUDED.category_id, owner_name=EXCLUDED.owner_name, updated_at=now() RETURNING *`, [guild.id, ownerId, displayName, floor, living.channelId, houseName, 'invite_only', category.id]);
   const house = rows[0];
   await pool.query(`INSERT INTO dishouse_house_rooms (house_id, room_id, channel_id, channel_name) VALUES ${roomRows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(',')} ON CONFLICT (house_id, room_id) DO UPDATE SET channel_id=EXCLUDED.channel_id, channel_name=EXCLUDED.channel_name`, roomRows.flatMap(room => [house.id, room.roomId, room.channelId, room.channelName]));
   return house;
