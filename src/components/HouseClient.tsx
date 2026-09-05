@@ -576,7 +576,7 @@ export default function HouseClient({
               {curMeta?.emoji}
             </span>
             <span>#{curMeta?.defaultChannel ?? "채널"} 대화</span>
-            {curRoomRow?.channel_id ? (
+            {isLinked ? (
               <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Discord 실시간 연동
