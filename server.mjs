@@ -192,12 +192,117 @@ const pool = pgPool ?? new pg.Pool({ connectionString: (process.env.DATABASE_URL
 const ROOM_IDS = ["living", "bedroom", "kitchen", "room1", "room2", "bathroom"];
 const ROOM_LABEL = { living:"거실", bedroom:"침실", kitchen:"주방", room1:"방 1", room2:"방 2", bathroom:"화장실" };
 const ROOM_EMOJI = { living:"🛋️", bedroom:"🛏️", kitchen:"🍳", room1:"🚪", room2:"🚪", bathroom:"🚿" };
+const HOUSE_GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
+const HOUSE_CATEGORY_NAME = "🏠 개인 하우스";
 
+// ── Houses DB ──────────────────────────────────────────────────────────
+async function ensureHouseTables() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_houses (id SERIAL PRIMARY KEY, guild_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_name TEXT NOT NULL DEFAULT '', floor INT NOT NULL, channel_id TEXT, channel_name TEXT, visibility TEXT NOT NULL DEFAULT 'invite_only', category_id TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(guild_id, owner_id), UNIQUE(guild_id, floor))`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_house_invites (house_id INT NOT NULL REFERENCES dishouse_houses(id) ON DELETE CASCADE, target_id TEXT NOT NULL, invited_by TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (house_id, target_id))`).catch(()=>{});
+  await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS owner_name TEXT NOT NULL DEFAULT ''`).catch(()=>{});
+  await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'invite_only'`).catch(()=>{});
+  await pool.query(`ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS category_id TEXT`).catch(()=>{});
+}
+ensureHouseTables().catch(()=>{});
+function formatHouseChannelName(floor, displayName) {
+  const safe = String(displayName).replace(/[@#:\`]/g, '').slice(0, 20).trim() || '익명';
+  return `⊹₊˚　　${floor}층・${safe}의 집　　˚₊⊹`;
+}
+async function getHouseByOwner(guildId, ownerId) {
+  const { rows } = await pool.query(`SELECT * FROM dishouse_houses WHERE guild_id=$1 AND owner_id=$2`, [guildId, ownerId]);
+  return rows[0] ?? null;
+}
+async function getHouseByChannel(channelId) {
+  const { rows } = await pool.query(`SELECT * FROM dishouse_houses WHERE channel_id=$1 LIMIT 1`, [channelId]);
+  return rows[0] ?? null;
+}
+async function getHouses(guildId) {
+  const { rows } = await pool.query(`SELECT * FROM dishouse_houses WHERE guild_id=$1 ORDER BY floor`, [guildId]);
+  return rows;
+}
+async function isHouseInvited(houseId, targetId) {
+  const { rows } = await pool.query(`SELECT 1 FROM dishouse_house_invites WHERE house_id=$1 AND target_id=$2`, [houseId, targetId]);
+  return !!rows[0];
+}
+async function canAccessHouse(house, viewerId) {
+  if (!house) return false;
+  if (house.owner_id === viewerId) return true;
+  if (viewerId === '1269575955626725390') return true;
+  if (house.visibility === 'public') return true;
+  if (house.visibility === 'private') return false;
+  return isHouseInvited(house.id, viewerId);
+}
+async function updateHouseChannelPermissions(guild, house) {
+  if (!house?.channel_id || !guild) return;
+  const ch = await guild.channels.fetch(house.channel_id).catch(()=>null);
+  if (!ch) return;
+  const everyone = guild.roles.everyone;
+  try {
+    if (house.visibility === 'public') {
+      await ch.permissionOverwrites.edit(everyone.id, { ViewChannel: true, ReadMessageHistory: true });
+    } else {
+      await ch.permissionOverwrites.edit(everyone.id, { ViewChannel: false });
+    }
+  } catch (e) { console.warn('[house perm update]', e.message); }
+}
+async function getNextHouseFloor(guildId) {
+  const { rows } = await pool.query(`SELECT COALESCE(MAX(floor),4)+1 AS nxt FROM dishouse_houses WHERE guild_id=$1`, [guildId]);
+  return Number(rows[0]?.nxt || 5);
+}
+async function getOrCreateHouseCategory(guild) {
+  const existing = guild.channels.cache.find(c => c.type === 4 && c.name === HOUSE_CATEGORY_NAME);
+  if (existing) return existing;
+  const fetched = await guild.channels.fetch().catch(()=>null);
+  if (fetched) {
+    const cat = [...fetched.values()].find(c => c.type === 4 && c.name === HOUSE_CATEGORY_NAME);
+    if (cat) return cat;
+  }
+  try { return await guild.channels.create({ name: HOUSE_CATEGORY_NAME, type: 4 }); } catch { return null; }
+}
+async function createHouseForUser(guild, ownerId, displayName) {
+  await ensureHouseTables();
+  const existing = await getHouseByOwner(guild.id, ownerId);
+  if (existing?.channel_id) {
+    const ch = await guild.channels.fetch(existing.channel_id).catch(()=>null);
+    if (ch) return existing;
+  }
+  let floor, ch;
+  if (existing && !existing.channel_id) {
+    floor = existing.floor;
+    ch = await guild.channels.create({ name: formatHouseChannelName(floor, displayName), type: 0, parent: (await getOrCreateHouseCategory(guild))?.id ?? null, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: ownerId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] });
+    await pool.query(`UPDATE dishouse_houses SET channel_id=$1, channel_name=$2, owner_name=$3, updated_at=now() WHERE id=$4`, [ch.id, ch.name, displayName, existing.id]);
+    return { ...existing, channel_id: ch.id, channel_name: ch.name };
+  }
+  floor = await getNextHouseFloor(guild.id);
+  ch = await guild.channels.create({ name: formatHouseChannelName(floor, displayName), type: 0, parent: (await getOrCreateHouseCategory(guild))?.id ?? null, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: ownerId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] });
+  const { rows } = await pool.query(`INSERT INTO dishouse_houses (guild_id, owner_id, owner_name, floor, channel_id, channel_name, visibility) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (guild_id, owner_id) DO UPDATE SET channel_id=EXCLUDED.channel_id, channel_name=EXCLUDED.channel_name, owner_name=EXCLUDED.owner_name, updated_at=now() RETURNING *`, [guild.id, ownerId, displayName, floor, ch.id, ch.name, 'invite_only']);
+  return rows[0];
+}
+async function grantHouseChannelView(guild, channelId, userId) {
+  if (!guild || !channelId || !userId) return;
+  const ch = await guild.channels.fetch(channelId).catch(()=>null);
+  if (!ch) return;
+  try { await ch.permissionOverwrites.edit(userId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }); } catch (e) { console.warn('[house grant]', e.message); }
+}
+async function revokeHouseChannelView(guild, channelId, userId) {
+  if (!guild || !channelId || !userId) return;
+  const ch = await guild.channels.fetch(channelId).catch(()=>null);
+  if (!ch) return;
+  try { await ch.permissionOverwrites.delete(userId).catch(()=>{}); } catch (e) { console.warn('[house revoke]', e.message); }
+}
 async function getRoomByChannel(channelId) {
   const { rows } = await pool.query(`SELECT id FROM rooms WHERE channel_id=$1 LIMIT 1`, [channelId]);
-  return rows[0]?.id ?? null;
+  if (rows[0]?.id) return rows[0].id;
+  const h = await getHouseByChannel(channelId);
+  if (h) return `house:${h.owner_id}`;
+  return null;
 }
 async function getChannelByRoom(roomId) {
+  if (roomId?.startsWith('house:')) {
+    const ownerId = roomId.slice(6);
+    const h = await getHouseByOwner(HOUSE_GUILD_ID, ownerId);
+    return h?.channel_id ?? null;
+  }
   const { rows } = await pool.query(`SELECT channel_id FROM rooms WHERE id=$1 LIMIT 1`, [roomId]);
   return rows[0]?.channel_id ?? null;
 }
@@ -416,7 +521,10 @@ io.on("connection", async (socket) => {
     socket.emit("shop:state", { coins: 0, xp: 0, owned_hats: [], owned_colors: [], equipped_hat: "none", equipped_color: "#6b7280", guest: true });
   }
 
-  socket.on("joinRoom", (roomId) => {
+  socket.on("joinRoom", async (roomId) => {
+    await leaveCurrentHouse();
+    // leave house rooms
+    for (const [key] of [...socket.rooms]) { if (key.startsWith('room:house:')) socket.leave(key); }
     const prev = presence.get(socket.id);
     if (prev) {
       // leave old room channels
@@ -493,6 +601,138 @@ io.on("connection", async (socket) => {
     io.emit("playerSkin", { userId, skin });
   });
 
+  // ── Houses ─────────────────────────────────────────────────────────
+  const activeHouseGrant = { channelId: null, houseId: null }; // per-socket temporary Discord view
+  async function leaveCurrentHouse() {
+    if (activeHouseGrant.channelId && activeHouseGrant.houseId) {
+      const chId = activeHouseGrant.channelId;
+      const hid = activeHouseGrant.houseId;
+      // only revoke if not owner
+      const h = await pool.query(`SELECT owner_id FROM dishouse_houses WHERE id=$1`, [hid]).then(r=>r.rows[0]).catch(()=>null);
+      if (h && h.owner_id !== userId && !isGuest) {
+        const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
+        if (guild) await revokeHouseChannelView(guild, chId, userId);
+      }
+      activeHouseGrant.channelId = null; activeHouseGrant.houseId = null;
+    }
+  }
+  socket.on("house:list", async () => {
+    try {
+      const rows = await getHouses(HOUSE_GUILD_ID);
+      // filter by visibility for this viewer: show all but mark canEnter
+      const list = await Promise.all(rows.map(async h => {
+        const can = await canAccessHouse(h, userId);
+        const invites = isGuest ? [] : await pool.query(`SELECT target_id FROM dishouse_house_invites WHERE house_id=$1`, [h.id]).then(r=>r.rows.map(x=>x.target_id)).catch(()=>[]);
+        return { id: h.id, guildId: h.guild_id, ownerId: h.owner_id, ownerName: h.owner_name, floor: h.floor, channelId: h.channel_id, channelName: h.channel_name, visibility: h.visibility, canEnter: can, invites };
+      }));
+      socket.emit("house:list", list);
+    } catch (e) { socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:create", async () => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 후 집을 만들 수 있어요." });
+    try {
+      const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
+      if (!guild) return socket.emit("house:error", { message: "Discord 서버를 찾을 수 없습니다." });
+      const house = await createHouseForUser(guild, userId, displayName);
+      io.emit("house:created", { id: house.id, ownerId: house.owner_id, ownerName: house.owner_name, floor: house.floor, channelId: house.channel_id, channelName: house.channel_name, visibility: house.visibility });
+      socket.emit("house:created", { id: house.id, ownerId: house.owner_id, ownerName: house.owner_name, floor: house.floor, channelId: house.channel_id, channelName: house.channel_name, visibility: house.visibility });
+      // refresh list for all
+      const rows = await getHouses(HOUSE_GUILD_ID);
+      io.emit("houses", rows);
+    } catch (e) { console.error('[house:create]', e); socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:enter", async ({ ownerId }) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, ownerId);
+      if (!house?.channel_id) return socket.emit("house:error", { message: "하우스가 없습니다." });
+      const can = await canAccessHouse(house, userId);
+      if (!can) return socket.emit("house:error", { message: house.visibility === 'private' ? "비공개 하우스입니다." : "초대되지 않은 하우스입니다. 소유자에게 초대를 요청하세요." });
+      await leaveCurrentHouse();
+      // grant temporary Discord view if not owner
+      if (house.owner_id !== userId) {
+        const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
+        if (guild) await grantHouseChannelView(guild, house.channel_id, userId);
+        activeHouseGrant.channelId = house.channel_id; activeHouseGrant.houseId = house.id;
+      }
+      // leave previous rooms
+      for (const rid of ROOM_IDS) socket.leave(`room:${rid}`);
+      // leave previous houses
+      for (const [key] of [...socket.rooms]) { if (key.startsWith('room:house:')) socket.leave(key); }
+      const houseRoomId = `house:${house.owner_id}`;
+      socket.join(`room:${houseRoomId}`);
+      const prev = presence.get(socket.id);
+      if (prev) presence.set(socket.id, { ...prev, room: houseRoomId });
+      broadcastPresence();
+      socket.emit("house:entered", { house, roomId: houseRoomId });
+      // also update presence to reflect house population
+      io.emit("house:presence", { houseId: house.id, ownerId: house.owner_id });
+    } catch (e) { socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:leave", async () => {
+    await leaveCurrentHouse();
+    // return to living
+    for (const [key] of [...socket.rooms]) { if (key.startsWith('room:house:')) socket.leave(key); }
+    socket.join(`room:living`);
+    const prev = presence.get(socket.id);
+    if (prev) presence.set(socket.id, { ...prev, room: 'living' });
+    broadcastPresence();
+    socket.emit("house:left");
+  });
+  socket.on("house:invite", async ({ targetId }) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      if (!house) return socket.emit("house:error", { message: "내 하우스가 없습니다. 먼저 생성하세요." });
+      if (!targetId) return socket.emit("house:error", { message: "초대할 유저 ID가 필요합니다." });
+      await pool.query(`INSERT INTO dishouse_house_invites (house_id, target_id, invited_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [house.id, String(targetId), userId]);
+      // push realtime invite notification to target if online on site
+      for (const [sid, p] of presence.entries()) {
+        if (p.userId === String(targetId)) {
+          io.to(sid).emit("house:inviteReceived", { house: { id: house.id, ownerName: house.owner_name, channelName: house.channel_name, floor: house.floor, ownerId: house.owner_id }, from: displayName });
+          try {
+            const { rows: inv } = await pool.query(`SELECT h.* FROM dishouse_houses h JOIN dishouse_house_invites i ON i.house_id=h.id WHERE i.target_id=$1 ORDER BY h.floor`, [String(targetId)]);
+            io.to(sid).emit("house:myInvites", inv);
+          } catch {}
+        }
+      }
+      socket.emit("house:ok", { message: `<@${targetId}> 님을 초대했습니다.` });
+    } catch (e) { socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:inviteRemove", async ({ targetId }) => {
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      if (!house) return socket.emit("house:error", { message: "내 하우스가 없습니다." });
+      await pool.query(`DELETE FROM dishouse_house_invites WHERE house_id=$1 AND target_id=$2`, [house.id, String(targetId)]);
+      // revoke if that user is currently inside
+      const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
+      if (guild && house.channel_id) await revokeHouseChannelView(guild, house.channel_id, String(targetId));
+      socket.emit("house:ok", { message: "초대를 취소했습니다." });
+    } catch (e) { socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:setVisibility", async ({ visibility }) => {
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      if (!house) return socket.emit("house:error", { message: "내 하우스가 없습니다." });
+      if (!['private','invite_only','public'].includes(visibility)) return socket.emit("house:error", { message: "visibility 오류" });
+      await pool.query(`UPDATE dishouse_houses SET visibility=$1, updated_at=now() WHERE id=$2`, [visibility, house.id]);
+      house.visibility = visibility;
+      const guild = discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ?? await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(()=>null);
+      if (guild) await updateHouseChannelPermissions(guild, house);
+      const label = visibility==='private' ? '비공개' : visibility==='public' ? '공용 (누구나)' : '초대만';
+      socket.emit("house:ok", { message: `공개 범위를 ${label}으로 변경했습니다.` });
+      const rows = await getHouses(HOUSE_GUILD_ID);
+      io.emit("houses", rows);
+    } catch (e) { socket.emit("house:error", { message: String(e.message) }); }
+  });
+  socket.on("house:myInvites", async () => {
+    if (isGuest) return socket.emit("house:myInvites", []);
+    try {
+      const { rows } = await pool.query(`SELECT h.id, h.owner_id, h.owner_name, h.floor, h.channel_id, h.channel_name, h.visibility, h.created_at FROM dishouse_houses h JOIN dishouse_house_invites i ON i.house_id=h.id WHERE i.target_id=$1 ORDER BY h.floor`, [userId]);
+      socket.emit("house:myInvites", rows);
+    } catch (e) { socket.emit("house:myInvites", []); }
+  });
+
   socket.on("chat", async ({ roomId, content }) => {
     if (!content || typeof content !== "string") return;
     const text = content.trim().slice(0, 500);
@@ -536,7 +776,8 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
+    await leaveCurrentHouse().catch(()=>{});
     const p = presence.get(socket.id);
     presence.delete(socket.id);
     console.log(`[socket] disconnect ${socket.id}`);
@@ -548,6 +789,7 @@ io.on("connection", async (socket) => {
   (async () => {
     const { rows } = await pool.query(`SELECT id, name, channel_id FROM rooms ORDER BY id`);
     socket.emit("rooms", rows);
+    try { const hr = await getHouses(HOUSE_GUILD_ID); socket.emit("houses", hr); } catch {}
   })();
 });
 

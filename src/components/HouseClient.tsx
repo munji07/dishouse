@@ -6,6 +6,7 @@ import HouseCanvas, { type OtherPlayer, type Bubble, type TimeMode } from "./Hou
 import { HATS, COLORS } from "@/lib/skins";
 
 type RoomRow = { id: string; name: string; channel_id: string | null };
+type HouseRow = { id: number; guild_id: string; owner_id: string; owner_name: string; floor: number; channel_id: string | null; channel_name: string | null; visibility: string; canEnter?: boolean; inviteIds?: string[] };
 type ChatMsg = {
   id: string;
   roomId: string;
@@ -45,6 +46,12 @@ export default function HouseClient({
   const [showPresenceList, setShowPresenceList] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [timeMode, setTimeMode] = useState<TimeMode>("auto");
+  const [houses, setHouses] = useState<HouseRow[]>([]);
+  const [houseMsg, setHouseMsg] = useState<string | null>(null);
+  const [showHousePanel, setShowHousePanel] = useState(true);
+  const [inviteInput, setInviteInput] = useState("");
+  const [myHouseVisibility, setMyHouseVisibility] = useState<string>("invite_only");
+  const [myInvites, setMyInvites] = useState<HouseRow[]>([]);
 
   const meId = me?.discordId ?? null;
   const currentRoomRef = useRef(currentRoom);
@@ -119,6 +126,31 @@ export default function HouseClient({
       setTimeout(() => setShopMsg(null), 2500);
     });
     s.on("playerSkin", ({ userId, skin }) => setOthersSkins((p) => ({ ...p, [userId]: skin })));
+    // houses
+    s.on("houses", (rows: HouseRow[]) => setHouses(rows as any));
+    s.on("house:list", (rows: HouseRow[]) => setHouses(rows));
+    s.on("house:created", () => { s.emit("house:list"); s.emit("house:myInvites"); });
+    s.on("house:entered", ({ house, roomId }: any) => {
+      setCurrentRoom(roomId);
+      setChats([]);
+      const isPublic = house.visibility==='public';
+      setHouseMsg(isPublic ? `🏠 ${house.channel_name} 공용 집 입장` : `🏠 ${house.channel_name} 에 입장 — 나갈 때 Discord 채널이 숨겨집니다.`);
+      setTimeout(()=>setHouseMsg(null), 3000);
+    });
+    s.on("house:left", () => {
+      setCurrentRoom("living");
+      s.emit("joinRoom", "living");
+      setChats([]);
+    });
+    s.on("house:ok", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
+    s.on("house:error", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
+    s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
+    s.on("house:inviteReceived", ({ house, from }: any) => {
+      setHouseMsg(`📩 ${from} 님이 ${house.channelName} 하우스에 초대했습니다!`);
+      setTimeout(()=>setHouseMsg(null), 4000);
+      s.emit("house:myInvites");
+      s.emit("house:list");
+    });
 
     return () => {
       s.disconnect();
@@ -127,9 +159,15 @@ export default function HouseClient({
 
   useEffect(() => {
     if (!socket) return;
+    if (currentRoom.startsWith("house:")) return; // house enter handles itself
     socket.emit("joinRoom", currentRoom);
     setChats([]);
   }, [socket, currentRoom]);
+  useEffect(() => {
+    if (!socket) return;
+    socket.emit("house:list");
+    socket.emit("house:myInvites");
+  }, [socket]);
 
   const handleRoomChange = (roomId: string) => {
     if (roomId !== currentRoom) {
@@ -139,6 +177,11 @@ export default function HouseClient({
 
   const handleSend = () => {
     if (!socket || !input.trim()) return;
+    if (currentRoom.startsWith("house:")) {
+      if (!me) { setError("로그인 후 채팅할 수 있습니다."); return; }
+      socket.emit("chat", { roomId: currentRoom, content: input.trim() });
+      setInput(""); setError(null); return;
+    }
     const cur = rooms.find((r) => r.id === currentRoom);
     if (!cur?.channel_id) {
       setError("이 방은 아직 연결된 채널이 없습니다.");
@@ -154,11 +197,104 @@ export default function HouseClient({
   };
 
   const curRoomRow = rooms.find((r) => r.id === currentRoom);
-  const isLinked = !!curRoomRow?.channel_id;
-  const curMeta = ROOMS.find((r) => r.id === currentRoom);
+  const myHouse = meId ? houses.find(h=>h.owner_id===meId) : null;
+  const curHouse = currentRoom.startsWith("house:") ? houses.find(h=>`house:${h.owner_id}`===currentRoom) : null;
+  const isLinked = curHouse ? !!curHouse.channel_id : !!curRoomRow?.channel_id;
+  const curMeta = curHouse ? { emoji:"🏠", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Houses Panel — 개인 하우스 */}
+      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter">
+        <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">
+          <div className="text-xs font-black text-[#2d1b0e] flex items-center gap-2">
+            <span>🏠 개인 하우스</span>
+            {houseMsg && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">{houseMsg}</span>}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {myHouse && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">{myHouse.channel_name}</span>}
+            <button onClick={()=>setShowHousePanel(!showHousePanel)} className="text-[11px] px-2.5 py-1 rounded-full bg-[#2d1b0e] text-white font-bold cursor-pointer">{showHousePanel ? "접기 ▼" : "펼치기 ▲"}</button>
+          </div>
+        </div>
+        {showHousePanel && (
+          <div className="p-3 flex flex-col gap-3">
+            {/* 초대 알림 */}
+            {myInvites.length>0 && (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 flex flex-col gap-2">
+                <div className="text-xs font-black text-amber-900 flex items-center gap-1.5">📩 초대 알림 <span className="px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px]">{myInvites.length}</span></div>
+                {myInvites.map(h=>(
+                  <div key={h.id} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-2.5 py-1.5 text-xs">
+                    <span className="font-bold text-[#2d1b0e]">{h.channel_name} ({h.floor}층・{h.owner_name})</span>
+                    <button onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold cursor-pointer">입장</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 내 집 관리 */}
+            <div className="flex flex-wrap items-center gap-2">
+              {!me ? <span className="text-xs text-[#8b6a4a]">로그인 후 내 집을 만들 수 있어요.</span> : !myHouse ? (
+                <button onClick={()=>socket?.emit("house:create")} className="px-4 py-1.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] cursor-pointer">✨ 내 집 생성 — ⊹₊˚ {houses.length ? Math.max(...houses.map(h=>h.floor))+1 : 5}층 자동배정</button>
+              ) : (
+                <>
+                  <span className="text-xs font-bold text-[#5c3a1a]">{myHouse.channel_name} · {myHouse.floor}층 · {myHouse.visibility==='public' ? '공용' : myHouse.visibility==='private' ? '비공개' : '초대만'}</span>
+                  <select value={myHouse.visibility} onChange={(e)=>{ socket?.emit("house:setVisibility", { visibility: e.target.value }); setMyHouseVisibility(e.target.value); }} className="text-xs border border-[#e7d5b8] rounded-full px-2 py-1 bg-[#fffaf0]">
+                    <option value="private">비공개 (나만)</option>
+                    <option value="invite_only">초대만</option>
+                    <option value="public">공용 (누구나)</option>
+                  </select>
+                  <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className="px-3 py-1 rounded-full bg-[#2d1b0e] text-white text-xs font-bold cursor-pointer">내 집 입장</button>
+                  {currentRoom.startsWith("house:") && <button onClick={()=>socket?.emit("house:leave")} className="px-3 py-1 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">거실로 나가기</button>}
+                </>
+              )}
+              <button onClick={()=>{socket?.emit("house:list"); socket?.emit("house:myInvites");}} className="ml-auto text-xs px-2.5 py-1 rounded-full bg-[#f5ece0] border border-[#e7d5b8] font-bold cursor-pointer">새로고침</button>
+            </div>
+            {/* 퀵 이동: 공용집/내집 */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-[#8b6a4a]">빠른 이동:</span>
+              <button onClick={()=>{ setCurrentRoom("living"); socket?.emit("joinRoom","living"); }} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom==="living" ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>거실(공용)</button>
+              {myHouse && <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom===`house:${meId}` ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>내 집</button>}
+              {houses.filter(h=>h.visibility==='public').slice(0,3).map(h=>(
+                <button key={h.id} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom===`house:${h.owner_id}` ? "bg-emerald-600 text-white" : "bg-emerald-50 border border-emerald-200 text-emerald-800"}`}>공용 {h.floor}층</button>
+              ))}
+            </div>
+            {/* 초대 */}
+            {myHouse && (
+              <div className="flex items-center gap-2">
+                <input value={inviteInput} onChange={(e)=>setInviteInput(e.target.value)} placeholder="초대할 Discord ID 입력" className="flex-1 px-3 py-1.5 rounded-full border border-[#e7d5b8] bg-[#fffaf0] text-xs outline-none focus:border-[#8b5a2b]" />
+                <button onClick={()=>{ if(!inviteInput.trim()) return; socket?.emit("house:invite", { targetId: inviteInput.trim() }); setInviteInput(""); }} className="px-3 py-1.5 rounded-full bg-amber-600 text-white text-xs font-bold cursor-pointer">초대</button>
+                <button onClick={()=>{ if(!inviteInput.trim()) return; socket?.emit("house:inviteRemove", { targetId: inviteInput.trim() }); setInviteInput(""); }} className="px-3 py-1.5 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">초대취소</button>
+              </div>
+            )}
+            {/* 목록 */}
+            <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto">
+              {houses.length===0 ? <span className="text-xs text-[#b89a7a]">아직 생성된 하우스가 없습니다. 첫 번째 집을 만들어보세요!</span> : houses.map(h=>{
+                const isMine = h.owner_id===meId;
+                const canEnter = ((h as any).canEnter ?? (isMine || h.visibility==='public'));
+                const badge = h.visibility==='public' ? '공용' : h.visibility==='private' ? '비공개' : '초대만';
+                const badgeColor = h.visibility==='public' ? 'bg-emerald-600' : 'bg-[#2d1b0e]';
+                return (
+                  <div key={h.id} className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs ${isMine ? "bg-[#fff7ed] border-amber-200" : h.visibility==='public' ? "bg-emerald-50 border-emerald-200" : "bg-[#fdfaf5] border-[#e7d5b8]"}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-[#8b5a2b]">{h.floor}층</span>
+                      <span className="font-bold text-[#2d1b0e]">{h.channel_name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full text-white ${badgeColor}`}>{badge}</span>
+                      {isMine && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900">내 집</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {currentRoom===`house:${h.owner_id}` ? (
+                        <button onClick={()=>socket?.emit("house:leave")} className="px-2.5 py-1 rounded-full bg-zinc-300 text-zinc-700 font-bold cursor-pointer">나가기</button>
+                      ) : (
+                        <button disabled={!canEnter && !isMine} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full font-bold cursor-pointer ${canEnter||isMine ? "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a]" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>{canEnter||isMine ? "입장" : "초대필요"}</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-[10px] text-[#a88a6a]">공용 집은 누구나 입장 가능 · 초대만은 초대받은 동안만, 입장한 동안만 Discord 채널이 보입니다.</div>
+          </div>
+        )}
+      </div>
       {/* Sleek Minimal HUD (Section 16 & 17) */}
       <div className="rounded-2xl border border-[#e7d5b8] bg-[#fffaf0]/95 backdrop-blur px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-xs warm-enter">
         {/* Left: Location & Channel info */}
