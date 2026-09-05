@@ -3,7 +3,7 @@
 - Next.js 16 (App Router, `src/`), Tailwind 4, TypeScript
 - DB: Supabase Postgres via `pg` (`DATABASE_URL` pooler, ssl rejectUnauthorized false, strip sslmode param) — table `rooms` (id/name/channel_id)
 - Auth: Discord OAuth2 (`/api/auth/login` → `/api/auth/callback`), session cookie `dishouse_session` (base64url JSON, httpOnly)
-- Discord: `DISCORD_CLIENT_ID=1516064597638123730`, `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `NEXT_PUBLIC_SITE_URL`
+- Discord: `DISCORD_CLIENT_ID=1525466279635325079` (support-bot, OAuth), `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `NEXT_PUBLIC_SITE_URL=https://dishouse.p-e.kr` (뒤 슬래시 없음, Discord Redirects에 `/api/auth/callback` 정확히 등록 필요)
 - 2D: `src/components/HouseCanvas.tsx` — Canvas, 6 rooms rect map, WASD/arrow move, mobile pad
 - Scripts: `npm run migrate` seeds rooms
 
