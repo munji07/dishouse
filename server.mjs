@@ -295,6 +295,11 @@ async function createHouseForUser(guild, ownerId, displayName) {
     } else {
       room = await guild.channels.create({ name: ROOM_LABEL[roomId], type: 0, parent: category.id });
     }
+    await room.permissionOverwrites.edit(owner.id, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+    });
     roomRows.push({ roomId, channelId: room.id, channelName: room.name });
   }
   const living = roomRows.find(room => room.roomId === "living");
@@ -758,6 +763,10 @@ io.on("connection", async (socket) => {
       if (!house) return socket.emit("house:error", { message: "내 하우스가 없습니다. 먼저 생성하세요." });
       if (!targetId) return socket.emit("house:error", { message: "초대할 유저 ID가 필요합니다." });
       await pool.query(`INSERT INTO dishouse_house_invites (house_id, target_id, invited_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [house.id, String(targetId), userId]);
+      const invitee = discordClient?.users ? await discordClient.users.fetch(String(targetId)).catch(() => null) : null;
+      if (invitee) {
+        await invitee.send(`🏠 ${displayName} 님이 5층 개인 하우스 **${house.channel_name}**에 초대했습니다.\nDISHOUSE에서 초대 알림을 확인하고 입장할 수 있어요.`).catch((error) => console.warn('[house invite DM]', error.message));
+      }
       // push realtime invite notification to target if online on site
       for (const [sid, p] of presence.entries()) {
         if (p.userId === String(targetId)) {
