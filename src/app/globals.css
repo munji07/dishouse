@@ -16,6 +16,10 @@
   --wood: #8b5a2b;
   --wood-dark: #5c3a1a;
   --cream: #fffaf0;
+  --ink: #24150e;
+  --coral: #e76f51;
+  --sage: #3f8f75;
+  --line: #eadbc9;
 }
 
 @theme inline {
@@ -31,10 +35,28 @@ body {
   color: var(--foreground);
   font-family: var(--font-gowun), "DungGeunMo", Pretendard, sans-serif;
   background-image:
-    radial-gradient(ellipse at 20% 10%, #fff7ed 0%, transparent 55%),
-    radial-gradient(ellipse at 90% 85%, #fef3c7 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, #fffbeb 0%, transparent 70%);
+    linear-gradient(135deg, rgba(255,255,255,.62) 0 1px, transparent 1px 18px),
+    radial-gradient(ellipse at 8% 0%, #fff7ed 0%, transparent 48%),
+    radial-gradient(ellipse at 92% 100%, #dff0e8 0%, transparent 42%),
+    linear-gradient(145deg, #fdf8f0 0%, #fffaf0 52%, #f2eee3 100%);
+  background-size: 18px 18px, auto, auto, auto;
   animation: warmShift 18s ease-in-out infinite alternate;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(36, 21, 14, .035), transparent 22%, transparent 78%, rgba(36, 21, 14, .05));
+  z-index: -1;
+}
+
+::selection { background: #f6c6a9; color: var(--ink); }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid rgba(231, 111, 81, .42);
+  outline-offset: 2px;
 }
 
 @keyframes warmShift {
@@ -75,6 +97,20 @@ body {
 .warm-enter { animation: entrance 0.5s ease-out both; }
 .warm-glow { animation: glowPulse 3s ease-in-out infinite; }
 .flicker { animation: flicker 0.9s ease-in-out infinite; }
+
+.page-shell { position: relative; }
+.site-header { box-shadow: 0 8px 28px rgba(92, 58, 26, .08); }
+.house-client > div:first-child {
+  box-shadow: 0 12px 30px rgba(92, 58, 26, .09);
+  border-color: var(--line);
+}
+.house-client > div:first-child > div:first-child {
+  background: linear-gradient(100deg, #fff7ed, #fffaf0 55%, #edf6ef);
+}
+.house-client input::placeholder { color: #b89a7a; }
+.house-client button { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
+.house-client button:not(:disabled):hover { transform: translateY(-1px); }
+.house-client button:not(:disabled):active { transform: translateY(0) scale(.98); }
 
 /* Pixel canvas rendering helper */
 canvas.pixelated {

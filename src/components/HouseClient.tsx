@@ -7,6 +7,7 @@ import { HATS, COLORS } from "@/lib/skins";
 
 type RoomRow = { id: string; name: string; channel_id: string | null };
 type HouseRow = { id: number; guild_id: string; owner_id: string; owner_name: string; floor: number; channel_id: string | null; channel_name: string | null; visibility: string; canEnter?: boolean; inviteIds?: string[] };
+type HouseMember = { id: string; name: string; username: string; avatarUrl: string };
 type ChatMsg = {
   id: string;
   roomId: string;
@@ -53,7 +54,8 @@ export default function HouseClient({
   const [houseMsg, setHouseMsg] = useState<string | null>(null);
   const [showHousePanel, setShowHousePanel] = useState(true);
   const [inviteInput, setInviteInput] = useState("");
-  const [myHouseVisibility, setMyHouseVisibility] = useState<string>("invite_only");
+  const [houseMembers, setHouseMembers] = useState<HouseMember[]>([]);
+  const [selectedInvitee, setSelectedInvitee] = useState<HouseMember | null>(null);
   const [myInvites, setMyInvites] = useState<HouseRow[]>([]);
 
   const meId = me?.discordId ?? null;
@@ -152,6 +154,7 @@ export default function HouseClient({
     s.on("house:ok", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
     s.on("house:error", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
     s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
+    s.on("house:members", (rows: HouseMember[]) => setHouseMembers(rows));
     s.on("house:inviteReceived", ({ house, from }: any) => {
       setHouseMsg(`📩 ${from} 님이 ${house.channelName} 하우스에 초대했습니다!`);
       setTimeout(()=>setHouseMsg(null), 4000);
@@ -215,7 +218,7 @@ export default function HouseClient({
   const curMeta = curHouse ? { emoji:"🏠", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="house-client flex flex-col gap-3">
       {/* Houses Panel — 개인 하우스 */}
       <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter">
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">
@@ -249,7 +252,7 @@ export default function HouseClient({
               ) : (
                 <>
                   <span className="text-xs font-bold text-[#5c3a1a]">{myHouse.channel_name} · {myHouse.floor}층 · {myHouse.visibility==='public' ? '공용' : myHouse.visibility==='private' ? '비공개' : '초대만'}</span>
-                  <select value={myHouse.visibility} onChange={(e)=>{ socket?.emit("house:setVisibility", { visibility: e.target.value }); setMyHouseVisibility(e.target.value); }} className="text-xs border border-[#e7d5b8] rounded-full px-2 py-1 bg-[#fffaf0]">
+                  <select value={myHouse.visibility} onChange={(e)=>{ socket?.emit("house:setVisibility", { visibility: e.target.value }); }} className="text-xs border border-[#e7d5b8] rounded-full px-2 py-1 bg-[#fffaf0]">
                     <option value="private">비공개 (나만)</option>
                     <option value="invite_only">초대만</option>
                     <option value="public">공용 (누구나)</option>
@@ -272,10 +275,22 @@ export default function HouseClient({
             </div>
             {/* 초대 */}
             {myHouse && (
-              <div className="flex items-center gap-2">
-                <input value={inviteInput} onChange={(e)=>setInviteInput(e.target.value)} placeholder="초대할 Discord ID 입력" className="flex-1 px-3 py-1.5 rounded-full border border-[#e7d5b8] bg-[#fffaf0] text-xs outline-none focus:border-[#8b5a2b]" />
-                <button onClick={()=>{ if(!inviteInput.trim()) return; socket?.emit("house:invite", { targetId: inviteInput.trim() }); setInviteInput(""); }} className="px-3 py-1.5 rounded-full bg-amber-600 text-white text-xs font-bold cursor-pointer">초대</button>
-                <button onClick={()=>{ if(!inviteInput.trim()) return; socket?.emit("house:inviteRemove", { targetId: inviteInput.trim() }); setInviteInput(""); }} className="px-3 py-1.5 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">초대취소</button>
+              <div className="relative flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[220px] flex-1">
+                  <input value={inviteInput} onChange={(e)=>{ const value=e.target.value; setInviteInput(value); setSelectedInvitee(null); socket?.emit("house:members", { query: value }); }} placeholder="Discord 멤버 이름으로 초대 검색" className="w-full px-3 py-1.5 rounded-full border border-[#e7d5b8] bg-[#fffaf0] text-xs outline-none focus:border-[#8b5a2b]" />
+                  {inviteInput && !selectedInvitee && houseMembers.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-[#e7d5b8] bg-white p-1.5 shadow-xl">
+                      {houseMembers.map((member) => (
+                        <button key={member.id} onClick={()=>{ setSelectedInvitee(member); setInviteInput(member.name); setHouseMembers([]); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-[#fff7ed] cursor-pointer">
+                          <img src={member.avatarUrl} alt="" className="h-6 w-6 rounded-full" />
+                          <span><b>{member.name}</b><small className="ml-1 text-zinc-400">@{member.username}</small></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button disabled={!selectedInvitee} onClick={()=>{ if(!selectedInvitee) return; socket?.emit("house:invite", { targetId: selectedInvitee.id }); setInviteInput(""); setSelectedInvitee(null); }} className="px-3 py-1.5 rounded-full bg-amber-600 text-white text-xs font-bold disabled:opacity-40 cursor-pointer">멤버 초대</button>
+                <span className="text-[10px] text-[#a88a6a]">이름을 검색해 선택하세요</span>
               </div>
             )}
             {/* 목록 */}

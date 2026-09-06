@@ -12,9 +12,9 @@ export default async function Home() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="page-shell flex min-h-screen flex-col">
       {/* Roof header (Section 19: DISHOUSE / Profile) */}
-      <header className="sticky top-0 z-20 border-b border-[#e7d5b8] bg-[#fffaf0]/95 backdrop-blur warm-enter">
+      <header className="site-header sticky top-0 z-20 border-b border-[#e7d5b8] bg-[#fffaf0]/95 backdrop-blur warm-enter">
         <div className="h-1.5 w-full bg-gradient-to-r from-[#5c3a1a] via-[#8b5a2b] to-[#5c3a1a] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-300/30 to-transparent bg-[length:200%_100%] animate-[shimmer_3s_ease-in-out_infinite]" />
         </div>
