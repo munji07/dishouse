@@ -582,7 +582,9 @@ async function createHouseForUser(guild, ownerId, displayName) {
         )
         .then((result) => result.rows)
     : [];
-  const floor = 5;
+  // allocate next available floor (5층부터 시작, 중복 방지)
+  const { rows: floorRows } = await pool.query(`SELECT COALESCE(MAX(floor), 4) AS max_floor FROM dishouse_houses WHERE guild_id=$1`, [guild.id]);
+  const floor = Number(floorRows[0]?.max_floor ?? 4) + 1;
   const houseName = formatHouseChannelName(floor, displayName);
   const overwrites = [
     { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -795,7 +797,7 @@ if (discordToken) {
           msg.member?.displayName ??
           msg.author.globalName ??
           msg.author.username,
-        avatar: msg.author.displayAvatarURL({ size: 128 }),
+        avatar: msg.author.displayAvatarURL({ size: 256 }),
       },
       content: msg.content,
       createdAt: msg.createdAt.toISOString(),
@@ -1215,6 +1217,8 @@ const io = new Server(httpServer, {
 
 // presence store
 const presence = new Map(); // socketId -> { user, room, pos }
+const chatLastAt = new Map(); // socketId -> timestamp for simple rate limit
+const CHAT_COOLDOWN_MS = 800;
 
 function broadcastPresence() {
   const counts = {};
@@ -1224,11 +1228,15 @@ function broadcastPresence() {
     byRoom[id] = 0;
   }
   let total = 0;
+  const byHouse = {};
   for (const p of presence.values()) {
     total++;
     if (p.room && counts[p.room] !== undefined) byRoom[p.room]++;
+    else if (p.room?.startsWith("house:")) {
+      byHouse[p.room] = (byHouse[p.room] ?? 0) + 1;
+    }
   }
-  io.emit("presence", { total, byRoom });
+  io.emit("presence", { total, byRoom, byHouse });
 }
 
 io.use(async (socket, nextFn) => {
@@ -1305,6 +1313,15 @@ io.on("connection", async (socket) => {
   }
 
   socket.on("joinRoom", async (roomId) => {
+    if (typeof roomId !== "string" || (!ROOM_IDS.includes(roomId) && !roomId.startsWith("house:"))) {
+      socket.emit("chatError", { message: "존재하지 않는 방입니다." });
+      return;
+    }
+    // house rooms must go through house:enter flow, not direct join
+    if (roomId.startsWith("house:")) {
+      socket.emit("chatError", { message: "하우스 방은 입장 절차를 통해 이동하세요." });
+      return;
+    }
     await leaveCurrentHouse();
     // leave house rooms
     for (const [key] of [...socket.rooms]) {
@@ -1608,7 +1625,7 @@ io.on("connection", async (socket) => {
             id: member.id,
             name: member.displayName,
             username: member.user.username,
-            avatarUrl: member.displayAvatarURL({ extension: "png", size: 64 }),
+            avatarUrl: member.displayAvatarURL({ extension: "png", size: 128 }),
           })),
       );
     } catch (e) {
@@ -1702,6 +1719,8 @@ io.on("connection", async (socket) => {
         );
       } catch (error) {
         await changeCoins(userId, object.price).catch(() => {});
+        const msg = String((error as Error).message ?? "");
+        if (msg.includes("duplicate key") || msg.includes("UNIQUE")) throw new Error("이미 같은 가구를 보유하고 있어요. (종류당 1개)");
         throw error;
       }
       socket.emit("shop:state", { ...(await getInventory(userId)), coins, xp: coins });
@@ -1786,7 +1805,7 @@ io.on("connection", async (socket) => {
       if (invitee) {
         await invitee
           .send(
-            `🏠 ${displayName} 님이 5층 개인 하우스 **${house.channel_name}**에 초대했습니다.\nDISHOUSE에서 초대 알림을 확인하고 입장할 수 있어요.`,
+            `🏠 ${displayName} 님이 ${house.floor}층 개인 하우스 **${house.channel_name}**에 초대했습니다.\nDISHOUSE에서 초대 알림을 확인하고 입장할 수 있어요.`,
           )
           .catch((error) => console.warn("[house invite DM]", error.message));
       }
@@ -1965,8 +1984,19 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("chat", async ({ roomId, content }) => {
-    const text = content.trim().slice(0, 500);
+    const now = Date.now();
+    const last = chatLastAt.get(socket.id) ?? 0;
+    if (now - last < CHAT_COOLDOWN_MS) {
+      socket.emit("chatError", { message: "조금 천천히 보내주세요. (800ms 제한)" });
+      return;
+    }
+    chatLastAt.set(socket.id, now);
+    const text = String(content ?? "").trim().slice(0, 500);
     if (!text) return;
+    if (typeof roomId !== "string" || (!ROOM_IDS.includes(roomId) && !roomId.startsWith("house:"))) {
+      socket.emit("chatError", { message: "존재하지 않는 방입니다." });
+      return;
+    }
     const channelId = await getChannelByRoom(roomId);
     if (!channelId) {
       socket.emit("chatError", {
@@ -2026,6 +2056,7 @@ io.on("connection", async (socket) => {
     await leaveCurrentHouse().catch(() => {});
     const p = presence.get(socket.id);
     presence.delete(socket.id);
+    chatLastAt.delete(socket.id);
     console.log(`[socket] disconnect ${socket.id}`);
     broadcastPresence();
     if (p?.room)

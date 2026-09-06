@@ -302,7 +302,7 @@ export default function HouseClient({
             {/* 내 집 관리 */}
             <div className="flex flex-wrap items-center gap-2">
               {!me ? <span className="text-xs text-[#8b6a4a]">로그인 후 내 집을 만들 수 있어요.</span> : !myHouse ? (
-                <button onClick={()=>socket?.emit("house:create")} className="px-4 py-1.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] cursor-pointer">내 집 생성 — 5층</button>
+                <button onClick={()=>socket?.emit("house:create")} className="px-4 py-1.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] cursor-pointer">내 집 생성</button>
               ) : (
                 <>
                   <span className="text-xs font-bold text-[#5c3a1a]">{myHouse.channel_name} · {myHouse.floor}층 · {myHouse.visibility==='public' ? '공용' : myHouse.visibility==='private' ? '비공개' : '초대만'}</span>

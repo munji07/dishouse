@@ -37,7 +37,7 @@ export default async function Home() {
                   ) : (
                     <span className="text-[10px] font-bold text-[#d7ba91]">손님</span>
                   )}
-                  <span className="text-xs font-bold text-[#f7ead2]">{me.displayName}</span>
+                  <span className="text-xs font-bold text-[#5c3a1a]">{me.displayName}</span>
                 </div>
                 <a
                   href="/api/auth/logout"

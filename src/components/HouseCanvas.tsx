@@ -164,9 +164,8 @@ export default function HouseCanvas({
 
   const toHighResAvatar = useCallback((url: string) => {
     if (!url) return url;
-    // Discord CDN supports ?size=16..4096. Force 256 for crisp head rendering on DPR 2 displays
     if (url.includes("cdn.discordapp.com") || url.includes("media.discordapp.net")) {
-      if (/[?&]size=\d+/.test(url)) return url.replace(/([?&]size=)\d+/, "$1256");
+      if (/[?&]size=\d+/.test(url)) return url.replace(/([?&]size=)\d+/, (_m, p1: string) => `${p1}256`);
       return url + (url.includes("?") ? "&" : "?") + "size=256";
     }
     return url;
