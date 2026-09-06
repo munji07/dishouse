@@ -90,6 +90,29 @@ const COLORS = [
   { id: "#9d4edd", price: 1200 },
   { id: "#f4a261", price: 800 },
 ];
+const HOUSE_OBJECT_CATALOG = [
+  { id: "reading_lamp", name: "독서등", symbol: "◇", price: 300, interactive: true, interaction: "독서등을 켰습니다." },
+  { id: "tea_table", name: "차 테이블", symbol: "□", price: 500, interactive: true, interaction: "따뜻한 차를 준비했습니다." },
+  { id: "gramophone", name: "축음기", symbol: "◎", price: 700, interactive: true, interaction: "작은 음악이 집 안에 흐릅니다." },
+  { id: "telescope", name: "망원경", symbol: "△", price: 900, interactive: true, interaction: "창밖의 별을 살펴봅니다." },
+  { id: "arcade", name: "오락기", symbol: "+", price: 1200, interactive: true, interaction: "오락기를 켰습니다." },
+];
+const DEFAULT_HOUSE_OBJECTS = [
+  { objectKey: "default_living", name: "거실 기본 가구", symbol: "⌂", roomId: "living", x: 190, y: 145 },
+  { objectKey: "default_kitchen", name: "주방 기본 가구", symbol: "□", roomId: "kitchen", x: 480, y: 105 },
+  { objectKey: "default_bedroom", name: "침실 기본 가구", symbol: "◇", roomId: "bedroom", x: 150, y: 420 },
+  { objectKey: "default_bathroom", name: "화장실 기본 가구", symbol: "○", roomId: "bathroom", x: 735, y: 105 },
+  { objectKey: "default_game", name: "게임방 기본 가구", symbol: "+", roomId: "room1", x: 435, y: 350 },
+  { objectKey: "default_study", name: "서재 기본 가구", symbol: "≡", roomId: "room2", x: 735, y: 350 },
+];
+const OBJECT_ROOM_POSITIONS = {
+  living: { x: 250, y: 210 },
+  bedroom: { x: 210, y: 500 },
+  kitchen: { x: 520, y: 145 },
+  bathroom: { x: 800, y: 145 },
+  room1: { x: 500, y: 470 },
+  room2: { x: 800, y: 470 },
+};
 const LEVEL_GUILD_ID = "1538513625730383902";
 
 // ── PG 기반 코인/XP (코인 = 경험치) ──────────────────────────────────────
@@ -121,6 +144,29 @@ async function getCoins(userId) {
     console.warn("[coins fallback]", e.message);
     return 0;
   }
+}
+async function changeCoins(userId, delta) {
+  if (pgPool) {
+    await pgPool.query(
+      "INSERT INTO user_progress (guild_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+      [LEVEL_GUILD_ID, userId],
+    );
+    const { rows } = await pgPool.query(
+      "UPDATE user_progress SET coins=coins+$1, updated_at=now() WHERE guild_id=$2 AND user_id=$3 AND coins+$1>=0 RETURNING coins",
+      [delta, LEVEL_GUILD_ID, userId],
+    );
+    if (!rows[0]) throw new Error("코인이 부족합니다.");
+    return Number(rows[0].coins);
+  }
+  if (!supportDb) throw new Error("코인 저장소를 사용할 수 없습니다.");
+  const row = supportDb
+    .prepare("SELECT coins FROM user_progress WHERE guild_id=? AND user_id=?")
+    .get(LEVEL_GUILD_ID, userId);
+  if (!row || Number(row.coins ?? 0) + delta < 0) throw new Error("코인이 부족합니다.");
+  supportDb
+    .prepare("UPDATE user_progress SET coins=coins+? WHERE guild_id=? AND user_id=?")
+    .run(delta, LEVEL_GUILD_ID, userId);
+  return Number(row.coins ?? 0) + delta;
 }
 async function getXp(userId) {
   if (pgPool) {
@@ -345,6 +391,11 @@ async function ensureHouseTables() {
     .catch(() => {});
   await pool
     .query(
+      `CREATE TABLE IF NOT EXISTS dishouse_house_objects (id BIGSERIAL PRIMARY KEY, house_id INT NOT NULL REFERENCES dishouse_houses(id) ON DELETE CASCADE, object_key TEXT NOT NULL, name TEXT NOT NULL, symbol TEXT NOT NULL, room_id TEXT NOT NULL, x INT NOT NULL, y INT NOT NULL, is_default BOOLEAN NOT NULL DEFAULT false, purchase_price INT NOT NULL DEFAULT 0, interactive BOOLEAN NOT NULL DEFAULT false, interaction TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(house_id, object_key))`,
+    )
+    .catch(() => {});
+  await pool
+    .query(
       `ALTER TABLE dishouse_houses ADD COLUMN IF NOT EXISTS owner_name TEXT NOT NULL DEFAULT ''`,
     )
     .catch(() => {});
@@ -391,6 +442,22 @@ async function getHouses(guildId) {
   const { rows } = await pool.query(
     `SELECT * FROM dishouse_houses WHERE guild_id=$1 ORDER BY floor`,
     [guildId],
+  );
+  return rows;
+}
+async function seedHouseObjects(houseId) {
+  if (!houseId) return;
+  for (const object of DEFAULT_HOUSE_OBJECTS) {
+    await pool.query(
+      `INSERT INTO dishouse_house_objects (house_id, object_key, name, symbol, room_id, x, y, is_default, purchase_price, interactive, interaction) VALUES ($1,$2,$3,$4,$5,$6,$7,true,0,false,'') ON CONFLICT (house_id, object_key) DO NOTHING`,
+      [houseId, object.objectKey, object.name, object.symbol, object.roomId, object.x, object.y],
+    );
+  }
+}
+async function getHouseObjects(houseId) {
+  const { rows } = await pool.query(
+    `SELECT id AS "instanceId", object_key AS "objectId", name, symbol, room_id AS "roomId", x, y, is_default AS "isDefault", purchase_price AS "purchasePrice", interactive, interaction FROM dishouse_house_objects WHERE house_id=$1 ORDER BY id`,
+    [houseId],
   );
   return rows;
 }
@@ -575,6 +642,7 @@ async function createHouseForUser(guild, ownerId, displayName) {
       room.channelName,
     ]),
   );
+  await seedHouseObjects(house.id);
   return house;
 }
 async function grantHouseChannelView(guild, channelId, userId) {
@@ -1501,7 +1569,9 @@ io.on("connection", async (socket) => {
       const prev = presence.get(socket.id);
       if (prev) presence.set(socket.id, { ...prev, room: houseRoomId });
       broadcastPresence();
+      await seedHouseObjects(house.id);
       socket.emit("house:entered", { house, roomId: houseRoomId });
+      socket.emit("house:objects", await getHouseObjects(house.id));
       // refresh list for all
       const rows = await getHouses(HOUSE_GUILD_ID);
       io.emit("houses", rows);
@@ -1570,7 +1640,9 @@ io.on("connection", async (socket) => {
       const prev = presence.get(socket.id);
       if (prev) presence.set(socket.id, { ...prev, room: houseRoomId });
       broadcastPresence();
+      await seedHouseObjects(house.id);
       socket.emit("house:entered", { house, roomId: houseRoomId });
+      socket.emit("house:objects", await getHouseObjects(house.id));
       // also update presence to reflect house population
       io.emit("house:presence", { houseId: house.id, ownerId: house.owner_id });
     } catch (e) {
@@ -1588,6 +1660,75 @@ io.on("connection", async (socket) => {
     if (prev) presence.set(socket.id, { ...prev, room: "living" });
     broadcastPresence();
     socket.emit("house:left");
+  });
+  socket.on("house:objects", async ({ ownerId } = {}) => {
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, ownerId || userId);
+      if (!house || !(await canAccessHouse(house, userId))) return socket.emit("house:objects", []);
+      await seedHouseObjects(house.id);
+      socket.emit("house:objects", await getHouseObjects(house.id));
+    } catch (e) {
+      socket.emit("house:error", { message: String(e.message) });
+    }
+  });
+  socket.on("house:buyObject", async ({ objectId, roomId } = {}) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      const object = HOUSE_OBJECT_CATALOG.find((item) => item.id === objectId);
+      if (!house || house.owner_id !== userId) throw new Error("내 집에서만 가구를 살 수 있습니다.");
+      if (!object) throw new Error("존재하지 않는 오브젝트입니다.");
+      if (!ROOM_IDS.includes(roomId)) throw new Error("배치할 방을 찾을 수 없습니다.");
+      const position = OBJECT_ROOM_POSITIONS[roomId];
+      const coins = await changeCoins(userId, -object.price);
+      try {
+        await pool.query(
+          `INSERT INTO dishouse_house_objects (house_id, object_key, name, symbol, room_id, x, y, is_default, purchase_price, interactive, interaction) VALUES ($1,$2,$3,$4,$5,$6,$7,false,$8,$9,$10)`,
+          [house.id, object.id, object.name, object.symbol, roomId, position.x, position.y, object.price, object.interactive, object.interaction],
+        );
+      } catch (error) {
+        await changeCoins(userId, object.price).catch(() => {});
+        throw error;
+      }
+      socket.emit("shop:state", { ...(await getInventory(userId)), coins, xp: coins });
+      socket.emit("house:objects", await getHouseObjects(house.id));
+      socket.emit("house:objectMessage", { message: `${object.name}을(를) ${roomId}에 놓았습니다.` });
+    } catch (e) {
+      socket.emit("house:error", { message: String(e.message) });
+    }
+  });
+  socket.on("house:removeObject", async ({ instanceId } = {}) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      if (!house || house.owner_id !== userId) throw new Error("내 집에서만 오브젝트를 삭제할 수 있습니다.");
+      const { rows } = await pool.query(
+        `DELETE FROM dishouse_house_objects WHERE id=$1 AND house_id=$2 RETURNING name, is_default, purchase_price`,
+        [instanceId, house.id],
+      );
+      const removed = rows[0];
+      if (!removed) throw new Error("오브젝트를 찾을 수 없습니다.");
+      const refund = removed.is_default ? 0 : Math.floor(Number(removed.purchase_price) * 0.5);
+      const coins = refund ? await changeCoins(userId, refund) : await getCoins(userId);
+      socket.emit("shop:state", { ...(await getInventory(userId)), coins, xp: coins });
+      socket.emit("house:objects", await getHouseObjects(house.id));
+      socket.emit("house:objectMessage", { message: refund ? `${removed.name} 삭제 완료 · ${refund}C 환불` : `${removed.name} 삭제 완료` });
+    } catch (e) {
+      socket.emit("house:error", { message: String(e.message) });
+    }
+  });
+  socket.on("house:objectInteract", async ({ instanceId, roomId } = {}) => {
+    try {
+      const houseOwnerId = String(roomId || "").split(":")[1];
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, houseOwnerId);
+      if (!house || !(await canAccessHouse(house, userId))) return;
+      const { rows } = await pool.query(
+        `SELECT name, interaction, interactive FROM dishouse_house_objects WHERE id=$1 AND house_id=$2`,
+        [instanceId, house.id],
+      );
+      if (!rows[0]?.interactive) return;
+      io.to(`room:${roomId}`).emit("house:objectMessage", { message: rows[0].interaction, objectId: instanceId });
+    } catch {}
   });
   socket.on("house:invite", async ({ targetId }) => {
     if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
@@ -1673,6 +1814,8 @@ io.on("connection", async (socket) => {
     if (prev) presence.set(socket.id, { ...prev, room: houseRoomId });
     broadcastPresence();
     socket.emit("house:entered", { house, roomId: houseRoomId });
+    await seedHouseObjects(house.id);
+    socket.emit("house:objects", await getHouseObjects(house.id));
     io.emit("house:presence", { houseId: house.id, ownerId: house.owner_id });
   }
   socket.on("house:enter", async ({ ownerId }) => {

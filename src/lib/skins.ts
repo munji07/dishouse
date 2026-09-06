@@ -1,9 +1,9 @@
 export const HATS = [
   { id: "none", name: "없음", emoji: "—", price: 0 },
-  { id: "cap", name: "캡모자", emoji: "🧢", price: 1000 },
-  { id: "beret", name: "베레모", emoji: "👒", price: 2000 },
-  { id: "crown", name: "왕관", emoji: "👑", price: 5000 },
-  { id: "top", name: "탑햇", emoji: "🎩", price: 3500 },
+  { id: "cap", name: "캡모자", emoji: "◇", price: 1000 },
+  { id: "beret", name: "베레모", emoji: "◒", price: 2000 },
+  { id: "crown", name: "왕관", emoji: "♛", price: 5000 },
+  { id: "top", name: "탑햇", emoji: "△", price: 3500 },
 ] as const;
 
 export const COLORS = [

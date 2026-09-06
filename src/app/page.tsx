@@ -18,6 +18,7 @@ export default async function Home() {
           <div className="flex items-center gap-2.5">
             <div>
               <div className="font-display tracking-wide leading-none text-[#f7ead2] text-lg">
+                <span aria-hidden="true" className="mr-1 text-[#d6b77e]">⌂</span>
                 DISHOUSE
               </div>
               <div className="text-[10px] tracking-wide text-[#c9aa80] mt-1">

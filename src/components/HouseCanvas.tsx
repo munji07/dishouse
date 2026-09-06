@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { Socket } from "socket.io-client";
 import { ROOMS } from "@/lib/constants";
 import { HATS, COLORS } from "@/lib/skins";
+import type { HouseObject } from "@/lib/houseObjects";
 
 export type Pos = { x: number; y: number };
 export type Direction = "down" | "up" | "left" | "right";
@@ -35,6 +36,7 @@ export const MAP = {
     { id: "room2", name: "방 2 (서재)", emoji: "", x: 600, y: 190, w: 272, h: 382, defaultChannel: "공부" },
   ] as const,
 };
+const DEFAULT_OBJECT_IDS = new Set(["default_living", "default_kitchen", "default_bedroom", "default_bathroom", "default_game", "default_study"]);
 
 // Openings between rooms with wooden thresholds
 export const DOORS: { id: string; x: number; y: number; w: number; h: number }[] = [
@@ -113,6 +115,9 @@ export default function HouseCanvas({
   socket,
   mySkin,
   othersSkins = {},
+  houseObjects = [],
+  houseObjectsLoaded = false,
+  onObjectInteract,
   timeMode = "auto",
   onTimeModeChange,
 }: {
@@ -123,6 +128,9 @@ export default function HouseCanvas({
   socket?: Socket | null;
   mySkin?: { hat: string; color: string };
   othersSkins?: Record<string, { hat: string; color: string }>;
+  houseObjects?: HouseObject[];
+  houseObjectsLoaded?: boolean;
+  onObjectInteract?: (object: HouseObject) => void;
   timeMode?: TimeMode;
   onTimeModeChange?: (mode: TimeMode) => void;
 }) {
@@ -179,6 +187,15 @@ export default function HouseCanvas({
       const sy = c.height / rect.height;
       const clickX = (e.clientX - rect.left) * sx;
       const clickY = (e.clientY - rect.top) * sy;
+
+      // Click on an interactive house object
+      for (const object of houseObjects) {
+        if (object.isDefault || object.roomId !== room) continue;
+        if (Math.hypot(clickX - object.x, clickY - object.y) < 28) {
+          onObjectInteract?.(object);
+          return;
+        }
+      }
 
       // Click on Me
       const myDist = Math.hypot(clickX - posRef.current.x, clickY - (posRef.current.y - 12));
@@ -237,7 +254,7 @@ export default function HouseCanvas({
 
     c.addEventListener("click", onClick);
     return () => c.removeEventListener("click", onClick);
-  }, [others, othersSkins, room, me, equipped]);
+  }, [houseObjects, onObjectInteract, others, othersSkins, room, me, equipped]);
 
   // Movement physics loop
   useEffect(() => {
@@ -373,19 +390,26 @@ export default function HouseCanvas({
       drawCottageExterior(ctx, MAP.width, MAP.height, t, timeOfDay);
 
       // 2. 6 Cottage Rooms Floor & Walls (라벨 제외)
+      const visibleDefaultObjects = houseObjectsLoaded
+        ? new Set(houseObjects.filter((object) => object.isDefault).map((object) => object.objectId))
+        : DEFAULT_OBJECT_IDS;
       for (const r of MAP.rooms) {
         drawRoomFloor(ctx, r);
         drawRoomRugs(ctx, r);
         drawRoomWindowsAndSunlight(ctx, r, timeOfDay, t);
         drawRoomWallsAndShadows(ctx, r);
-        drawHandcraftedFurniture(ctx, r, t, flicker, timeOfDay);
+        drawHandcraftedFurniture(ctx, r, t, flicker, timeOfDay, visibleDefaultObjects);
       }
 
       // 3. Thick Log Wall Trim & Doorways
       drawHouseArchitecture(ctx);
 
       // 4. Living Room Fireplace Embers & Smoke
-      drawLivingFireplace(ctx, flicker, timeOfDay, t);
+      if (visibleDefaultObjects.has("default_living")) {
+        drawLivingFireplace(ctx, flicker, timeOfDay, t);
+      }
+
+      drawPlacedObjects(ctx, houseObjects, room, t);
 
       // 5. Target pointer
       if (targetRef.current) {
@@ -491,7 +515,7 @@ export default function HouseCanvas({
 
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [me, others, bubbles, room, resolvedTime, equipped, othersSkins, selectedProfile]);
+  }, [me, others, bubbles, room, resolvedTime, equipped, othersSkins, selectedProfile, houseObjects, houseObjectsLoaded]);
 
   const movePad = (dx: number, dy: number) => {
     if (Math.abs(dx) > Math.abs(dy)) {
@@ -978,11 +1002,12 @@ function drawHandcraftedFurniture(
   r: (typeof MAP.rooms)[number],
   t: number,
   flicker: number,
-  timeOfDay: "day" | "dusk" | "night"
+  timeOfDay: "day" | "dusk" | "night",
+  visibleDefaultObjects: Set<string>
 ) {
   ctx.save();
 
-  if (r.id === "living") {
+  if (r.id === "living" && visibleDefaultObjects.has("default_living")) {
     // 1. Sofa
     const sx = r.x + 38,
       sy = r.y + 115,
@@ -1093,7 +1118,7 @@ function drawHandcraftedFurniture(
     ctx.ellipse(px + 6, py - 6, 9, 6, 0.4, 0, Math.PI * 2);
     ctx.ellipse(px + 1, py - 10, 7, 7, 0, 0, Math.PI * 2);
     ctx.fill();
-  } else if (r.id === "kitchen") {
+  } else if (r.id === "kitchen" && visibleDefaultObjects.has("default_kitchen")) {
     // 1. Countertop & Double Sink
     const kx = r.x + 16,
       ky = r.y + 26,
@@ -1163,7 +1188,7 @@ function drawHandcraftedFurniture(
     ctx.beginPath();
     ctx.ellipse(dX + 26, dY + 22, 6, 4, 0, 0, Math.PI * 2);
     ctx.fill();
-  } else if (r.id === "bedroom") {
+  } else if (r.id === "bedroom" && visibleDefaultObjects.has("default_bedroom")) {
     // 1. Cottage Double Bed
     const bx = r.x + 28,
       by = r.y + 44,
@@ -1243,7 +1268,7 @@ function drawHandcraftedFurniture(
     ctx.fillStyle = "#fef08a";
     ctx.fillRect(wX + 16, wY + 38, 2, 4);
     ctx.fillRect(wX + 24, wY + 38, 2, 4);
-  } else if (r.id === "bathroom") {
+  } else if (r.id === "bathroom" && visibleDefaultObjects.has("default_bathroom")) {
     // 1. Porcelain Clawfoot Bathtub with Shimmering Water & Foam
     const bx = r.x + 24,
       by = r.y + 34,
@@ -1297,7 +1322,7 @@ function drawHandcraftedFurniture(
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
-  } else if (r.id === "room1") {
+  } else if (r.id === "room1" && visibleDefaultObjects.has("default_game")) {
     // 1. Gamer Battlestation (Dual monitors & RGB keyboard)
     const dX = r.x + 36,
       dY = r.y + 44,
@@ -1353,7 +1378,7 @@ function drawHandcraftedFurniture(
     // Headstock
     ctx.fillStyle = "#451a03";
     ctx.fillRect(gx - 3, gy - 16, 6, 5);
-  } else if (r.id === "room2") {
+  } else if (r.id === "room2" && visibleDefaultObjects.has("default_study")) {
     // 1. Two-Tier Grand Wall Library
     const bkW = 52,
       bkH = 92;
@@ -1421,10 +1446,36 @@ function drawHandcraftedFurniture(
   ctx.restore();
 }
 
+function drawPlacedObjects(ctx: CanvasRenderingContext2D, objects: HouseObject[], room: string, t: number) {
+  for (const object of objects) {
+    if (object.isDefault || object.roomId !== room) continue;
+    const pulse = object.interactive ? 1 + Math.sin(t * 3 + object.x) * 0.04 : 1;
+    ctx.save();
+    ctx.translate(object.x, object.y);
+    ctx.fillStyle = "rgba(45, 27, 14, 0.24)";
+    ctx.beginPath();
+    ctx.ellipse(0, 12, 22 * pulse, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = object.interactive ? "#7c4a24" : "#6b4b30";
+    roundRect(ctx, -18, -18, 36, 34, 5);
+    ctx.fill();
+    ctx.strokeStyle = "#e8c98d";
+    ctx.lineWidth = 2;
+    roundRect(ctx, -18, -18, 36, 34, 5);
+    ctx.stroke();
+    ctx.fillStyle = "#fff4d6";
+    ctx.font = "bold 18px DISHOUSE, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(object.symbol, 0, -1);
+    ctx.restore();
+  }
+}
+
 function drawRoomLabel(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[number], isActive: boolean) {
   const label = r.name;
   ctx.save();
-  ctx.font = "bold 11px sans-serif";
+  ctx.font = "bold 13px DISHOUSE, sans-serif";
   const tw = ctx.measureText(label).width;
   const pw = tw + 18;
   const ph = 20;
@@ -1671,18 +1722,18 @@ function drawPixelCharacter(
   // 6. Hat
   if (skin.hat && skin.hat !== "none") {
     const hats: Record<string, string> = {
-      cap: "🧢",
-      beret: "👒",
-      crown: "👑",
-      top: "🎩",
+      cap: "◇",
+      beret: "◒",
+      crown: "♛",
+      top: "△",
     };
-    ctx.font = "19px sans-serif";
+    ctx.font = "19px DISHOUSE, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(hats[skin.hat] ?? "🧢", px, py - 32);
+    ctx.fillText(hats[skin.hat] ?? "◇", px, py - 32);
   }
 
   // 7. Nameplate (Clean wooden pill badge above character)
-  ctx.font = "bold 11px sans-serif";
+  ctx.font = "bold 12px DISHOUSE, sans-serif";
   const tw = ctx.measureText(name).width + 16;
   const nx = px - tw / 2;
   const ny = py - 44 - (skin.hat && skin.hat !== "none" ? 10 : 0);
@@ -1715,7 +1766,7 @@ function drawPixelCharacter(
 function drawSpeechBubble(ctx: CanvasRenderingContext2D, pos: Pos, text: string) {
   ctx.save();
   const maxW = 160;
-  ctx.font = "12px sans-serif";
+  ctx.font = "13px DISHOUSE, sans-serif";
   const lines = wrapText(ctx, text, maxW - 20);
   const textWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
   const w = Math.min(maxW, Math.max(textWidth + 24, 48));

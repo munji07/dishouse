@@ -4,6 +4,7 @@ import { io, Socket } from "socket.io-client";
 import { ROOMS } from "@/lib/constants";
 import HouseCanvas, { type OtherPlayer, type Bubble, type TimeMode } from "./HouseCanvas";
 import { HATS, COLORS } from "@/lib/skins";
+import { HOUSE_OBJECTS, type HouseObject } from "@/lib/houseObjects";
 
 type RoomRow = { id: string; name: string; channel_id: string | null };
 type HouseRow = { id: number; guild_id: string; owner_id: string; owner_name: string; floor: number; channel_id: string | null; channel_name: string | null; visibility: string; canEnter?: boolean; inviteIds?: string[] };
@@ -59,6 +60,10 @@ export default function HouseClient({
   const [selectedInvitee, setSelectedInvitee] = useState<HouseMember | null>(null);
   const [myInvites, setMyInvites] = useState<HouseRow[]>([]);
   const [houseMotion, setHouseMotion] = useState<"idle" | "traveling" | "arriving">("idle");
+  const [houseObjects, setHouseObjects] = useState<HouseObject[]>([]);
+  const [houseObjectsLoaded, setHouseObjectsLoaded] = useState(false);
+  const [showObjectShop, setShowObjectShop] = useState(false);
+  const [objectMessage, setObjectMessage] = useState<string | null>(null);
 
   const meId = me?.discordId ?? null;
   const roomsRef = useRef(rooms);
@@ -161,6 +166,8 @@ export default function HouseClient({
       setCurrentRoom("living");
       s.emit("joinRoom", "living");
       setChats([]);
+      setHouseObjects([]);
+      setHouseObjectsLoaded(false);
     });
     s.on("house:deleted", ({ ownerId }: { ownerId: string }) => {
       setHouses((prev) => prev.filter((house) => house.owner_id !== ownerId));
@@ -170,6 +177,14 @@ export default function HouseClient({
     s.on("house:error", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
     s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
     s.on("house:members", (rows: HouseMember[]) => setHouseMembers(rows));
+    s.on("house:objects", (rows: HouseObject[]) => {
+      setHouseObjects(rows);
+      setHouseObjectsLoaded(true);
+    });
+    s.on("house:objectMessage", ({ message }: { message: string }) => {
+      setObjectMessage(message);
+      window.setTimeout(() => setObjectMessage(null), 3000);
+    });
     s.on("house:inviteReceived", ({ house, from }: any) => {
       setHouseMsg(`${from} 님이 ${house.channelName} 하우스에 초대했습니다.`);
       setTimeout(()=>setHouseMsg(null), 4000);
@@ -236,6 +251,14 @@ export default function HouseClient({
   const curHouse = isHouseRoom(currentRoom) ? houses.find(h=>h.owner_id===houseOwnerId(currentRoom)) : null;
   const isLinked = curHouse ? !!curHouse.channel_id : !!curRoomRow?.channel_id;
   const curMeta = curHouse ? { emoji:"", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
+  const currentHouseOwner = isHouseRoom(currentRoom) ? houseOwnerId(currentRoom) : null;
+  const canDecorate = !!meId && !!curHouse && curHouse.owner_id === meId && currentHouseOwner === meId;
+  const objectRoom = isHouseRoom(currentRoom) ? currentRoom.split(":")[2] ?? "living" : "living";
+  const handleObjectInteract = (object: HouseObject) => {
+    if (isHouseRoom(currentRoom)) {
+      socket?.emit("house:objectInteract", { instanceId: object.instanceId, roomId: currentRoom });
+    }
+  };
 
   return (
     <div className="house-client flex flex-col gap-3">
@@ -243,11 +266,12 @@ export default function HouseClient({
       <div className="house-management rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter">
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">
           <div className="text-xs font-black text-[#2d1b0e] flex items-center gap-2">
-            <span>개인 하우스</span>
+            <span><span aria-hidden="true" className="mr-1 text-[#8b5a2b]">⌂</span>개인 하우스</span>
             {houseMsg && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">{houseMsg}</span>}
           </div>
           <div className="flex items-center gap-1.5">
             {myHouse && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">{myHouse.channel_name}</span>}
+            {canDecorate && <button onClick={() => setShowObjectShop(!showObjectShop)} className="text-[11px] px-2.5 py-1 rounded-full border border-[#b68d61] bg-[#fffaf0] text-[#5c3a1a] font-bold cursor-pointer">{showObjectShop ? "꾸미기 닫기" : "집 꾸미기"}</button>}
             <button onClick={()=>setShowHousePanel(!showHousePanel)} className="text-[11px] px-2.5 py-1 rounded-full bg-[#2d1b0e] text-white font-bold cursor-pointer">{showHousePanel ? "접기 ▼" : "펼치기 ▲"}</button>
           </div>
         </div>
@@ -343,6 +367,45 @@ export default function HouseClient({
           </div>
         )}
       </div>
+      {showObjectShop && canDecorate && (
+        <div className="object-shop rounded-2xl border border-[#b68d61] bg-[#fffaf0] p-4 flex flex-col gap-3 warm-enter">
+          <div className="flex items-center justify-between border-b border-[#e7d5b8] pb-2">
+            <div>
+              <div className="text-sm font-black text-[#2d1b0e]">집 꾸미기</div>
+              <div className="text-[11px] text-[#68482d]">현재 방: {ROOMS.find((room) => room.id === objectRoom)?.name ?? objectRoom} · 코인 {shop?.coins.toLocaleString() ?? 0}C</div>
+            </div>
+            <span className="text-[11px] text-[#68482d]">기본 가구는 환불되지 않습니다.</span>
+          </div>
+          {objectMessage && <div className="border-l-2 border-[#8b5a2b] bg-[#f4e4cc] px-3 py-2 text-xs font-bold text-[#4b321f]">{objectMessage}</div>}
+          <div>
+            <div className="mb-2 text-xs font-black text-[#5c3a1a]">기본 배치</div>
+            <div className="flex flex-wrap gap-2">
+              {houseObjects.filter((object) => object.isDefault).map((object) => (
+                <div key={object.instanceId} className="flex items-center gap-2 border border-[#e7d5b8] bg-white px-2.5 py-2 text-xs text-[#4b321f]">
+                  <span>{object.name}</span>
+                  <button onClick={() => socket?.emit("house:removeObject", { instanceId: object.instanceId })} className="border border-[#c7a77f] px-2 py-0.5 text-[11px] font-bold text-[#68482d] cursor-pointer">삭제</button>
+                </div>
+              ))}
+              {houseObjects.filter((object) => object.isDefault).length === 0 && <span className="text-xs text-[#68482d]">기본 배치를 모두 비웠습니다.</span>}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-xs font-black text-[#5c3a1a]">구매 가능한 오브젝트</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {HOUSE_OBJECTS.map((object) => {
+                const owned = houseObjects.some((placed) => placed.objectId === object.id);
+                const affordable = (shop?.coins ?? 0) >= object.price;
+                return (
+                  <div key={object.id} className="flex items-center justify-between border border-[#e7d5b8] bg-white px-3 py-2 text-xs text-[#4b321f]">
+                    <div><span className="mr-2 text-base text-[#8b5a2b]">{object.symbol}</span><span className="font-bold">{object.name}</span><span className="ml-2 text-[#68482d]">{object.price}C</span></div>
+                    <button disabled={owned || !affordable} onClick={() => socket?.emit("house:buyObject", { objectId: object.id, roomId: objectRoom })} className="border border-[#8b5a2b] bg-[#8b5a2b] px-2 py-1 text-[11px] font-bold text-white disabled:border-[#d6c7b8] disabled:bg-[#e7d5b8] disabled:text-[#8f765c] cursor-pointer">{owned ? "보유" : affordable ? "구매" : "코인 부족"}</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Sleek Minimal HUD (Section 16 & 17) */}
         <div className="world-hud rounded-2xl border border-[#e7d5b8] bg-[#fffaf0] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-xs warm-enter">
         {/* Left: Location & Channel info */}
@@ -446,8 +509,8 @@ export default function HouseClient({
       >
         <div className="bg-[#fdf8f0] rounded-[18px] overflow-hidden">
           <div className="h-8 bg-[#6b3d1a] flex items-center justify-between px-3.5">
-            <div className="text-[11px] font-black tracking-widest text-[#fde68a]">공용 생활관 · DISHOUSE</div>
-            <div className="text-[10px] text-[#fde68a]/75">{curMeta?.name ?? "거실"}에 머무는 중</div>
+            <div className="text-[11px] font-black tracking-widest text-[#fde68a]"><span aria-hidden="true" className="mr-1">⌂</span>공용 생활관 · DISHOUSE</div>
+            <div className="text-[10px] text-[#fde68a]/75">{objectMessage ?? `${curMeta?.name ?? "거실"}에 머무는 중`}</div>
           </div>
           <div className="p-2 sm:p-3 bg-[#26150a]">
             <HouseCanvas
@@ -458,6 +521,9 @@ export default function HouseClient({
               socket={socket}
               mySkin={shop ? { hat: shop.equipped_hat, color: shop.equipped_color } : undefined}
               othersSkins={othersSkins}
+              houseObjects={houseObjects}
+              houseObjectsLoaded={houseObjectsLoaded}
+              onObjectInteract={handleObjectInteract}
               timeMode={timeMode}
               onTimeModeChange={setTimeMode}
             />
