@@ -687,7 +687,7 @@ export default function HouseClient({
             <div className="text-[11px] font-black tracking-widest text-[#fde68a]"><span aria-hidden="true" className="mr-1">⌂</span>공용 생활관 · DISHOUSE</div>
             <div className="text-[10px] text-[#fde68a]/75">{objectMessage ?? `${curMeta?.name ?? "거실"}에 머무는 중`}</div>
           </div>
-          <div className="p-2 sm:p-3 bg-[#26150a]">
+          <div className="p-1.5 sm:p-2 bg-[#26150a] flex">
             <HouseCanvas
               me={me}
               others={Object.values(others)}

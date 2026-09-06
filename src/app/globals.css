@@ -37,6 +37,12 @@ body {
   font-size: 14px;
   line-height: 1.5;
   background: #eadcc8;
+  /* subtle warm woven pattern so side margins don't look empty */
+  background-image:
+    radial-gradient(rgba(120, 68, 33, 0.06) 1px, transparent 1px),
+    radial-gradient(rgba(120, 68, 33, 0.04) 1px, transparent 1px);
+  background-size: 22px 22px, 22px 22px;
+  background-position: 0 0, 11px 11px;
 }
 
 ::selection { background: #f6c6a9; color: var(--ink); }

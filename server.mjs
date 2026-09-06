@@ -91,11 +91,18 @@ const COLORS = [
   { id: "#f4a261", price: 800 },
 ];
 const HOUSE_OBJECT_CATALOG = [
-  { id: "reading_lamp", name: "독서등", symbol: "◇", price: 300, interactive: true, interaction: "독서등을 켰습니다." },
-  { id: "tea_table", name: "차 테이블", symbol: "□", price: 500, interactive: true, interaction: "따뜻한 차를 준비했습니다." },
+  { id: "reading_lamp", name: "독서등", symbol: "⬢", price: 300, interactive: true, interaction: "독서등을 켰습니다 — 따뜻한 불빛이 퍼집니다." },
+  { id: "tea_table", name: "차 테이블", symbol: "▭", price: 500, interactive: true, interaction: "따뜻한 차를 준비했습니다." },
   { id: "gramophone", name: "축음기", symbol: "◎", price: 700, interactive: true, interaction: "작은 음악이 집 안에 흐릅니다." },
   { id: "telescope", name: "망원경", symbol: "△", price: 900, interactive: true, interaction: "창밖의 별을 살펴봅니다." },
-  { id: "arcade", name: "오락기", symbol: "+", price: 1200, interactive: true, interaction: "오락기를 켰습니다." },
+  { id: "arcade", name: "오락기", symbol: "▣", price: 1200, interactive: true, interaction: "오락기를 켰습니다. — INSERT COIN!" },
+  { id: "potted_plant", name: "몬스테라 화분", symbol: "❧", price: 250, interactive: false, interaction: "" },
+  { id: "bookshelf", name: "원목 책장", symbol: "▥", price: 800, interactive: true, interaction: "책장을 살펴봅니다. — 좋아하는 책을 꺼냈습니다." },
+  { id: "cozy_sofa", name: "포근 소파", symbol: "⌒", price: 1100, interactive: true, interaction: "소파에 앉아 잠시 쉬어갑니다." },
+  { id: "floor_lamp", name: "장스탠드", symbol: "◐", price: 400, interactive: true, interaction: "스탠드를 켜고 껐습니다." },
+  { id: "rug_round", name: "털 러그", symbol: "⬭", price: 350, interactive: false, interaction: "" },
+  { id: "cat_tower", name: "캣타워", symbol: "ฅ", price: 1000, interactive: true, interaction: "야옹 — 고양이가 캣타워에서 낮잠을 잡니다." },
+  { id: "mini_fridge", name: "미니 냉장고", symbol: "▯", price: 600, interactive: true, interaction: "냉장고를 열었습니다 — 차가운 음료가 있습니다!" },
 ];
 const DEFAULT_HOUSE_OBJECTS = [
   { objectKey: "default_living", name: "거실 기본 가구", symbol: "⌂", roomId: "living", x: 190, y: 145 },

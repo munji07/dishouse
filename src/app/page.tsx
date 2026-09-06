@@ -14,7 +14,7 @@ export default async function Home() {
   return (
     <div className="page-shell flex min-h-screen flex-col">
       <header className="site-header sticky top-0 z-20 border-b border-[#b98d5f] bg-[#2f241a] text-[#f7ead2]">
-        <div className="max-w-[1180px] mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-[1420px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div>
               <div className="font-display tracking-wide leading-none text-[#f7ead2] text-lg">
@@ -58,7 +58,7 @@ export default async function Home() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-[1180px] mx-auto w-full px-3 sm:px-5 py-5 flex flex-col gap-3">
+      <main className="flex-1 max-w-[1420px] mx-auto w-full px-2 sm:px-4 py-5 flex flex-col gap-3">
         {!me && (
           <div className="guest-note border-l-2 border-[#c48a45] px-3 py-1 flex items-center justify-between text-xs text-[#725333]">
             <div className="flex items-center gap-2">
