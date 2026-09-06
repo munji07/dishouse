@@ -27,12 +27,12 @@ export const MAP = {
   width: 900,
   height: 600,
   rooms: [
-    { id: "living", name: "거실", emoji: "🛋️", x: 28, y: 28, w: 326, h: 262, defaultChannel: "일반" },
-    { id: "kitchen", name: "주방", emoji: "🍳", x: 354, y: 28, w: 264, h: 162, defaultChannel: "요리" },
-    { id: "bathroom", name: "화장실", emoji: "🚿", x: 618, y: 28, w: 254, h: 162, defaultChannel: "잡담" },
-    { id: "bedroom", name: "침실", emoji: "🛏️", x: 28, y: 290, w: 262, h: 282, defaultChannel: "일상" },
-    { id: "room1", name: "방 1 (게임방)", emoji: "🎮", x: 290, y: 190, w: 310, h: 382, defaultChannel: "게임" },
-    { id: "room2", name: "방 2 (서재)", emoji: "📚", x: 600, y: 190, w: 272, h: 382, defaultChannel: "공부" },
+    { id: "living", name: "거실", emoji: "", x: 28, y: 28, w: 326, h: 262, defaultChannel: "일반" },
+    { id: "kitchen", name: "주방", emoji: "", x: 354, y: 28, w: 264, h: 162, defaultChannel: "요리" },
+    { id: "bathroom", name: "화장실", emoji: "", x: 618, y: 28, w: 254, h: 162, defaultChannel: "잡담" },
+    { id: "bedroom", name: "침실", emoji: "", x: 28, y: 290, w: 262, h: 282, defaultChannel: "일상" },
+    { id: "room1", name: "방 1 (게임방)", emoji: "", x: 290, y: 190, w: 310, h: 382, defaultChannel: "게임" },
+    { id: "room2", name: "방 2 (서재)", emoji: "", x: 600, y: 190, w: 272, h: 382, defaultChannel: "공부" },
   ] as const,
 };
 
@@ -190,7 +190,7 @@ export default function HouseCanvas({
           name: me?.displayName ?? "게스트",
           avatarUrl: me?.avatarUrl ?? null,
           roomName: curMeta?.name ?? "거실",
-          roomEmoji: curMeta?.emoji ?? "🛋️",
+          roomEmoji: curMeta?.emoji ?? "",
           isMe: true,
           hatName: hatItem?.name ?? "없음",
           hatEmoji: hatItem?.emoji ?? "—",
@@ -218,7 +218,7 @@ export default function HouseCanvas({
           name: clickedOther.name,
           avatarUrl: clickedOther.avatarUrl,
           roomName: rMeta?.name ?? "알 수 없음",
-          roomEmoji: rMeta?.emoji ?? "🏠",
+          roomEmoji: rMeta?.emoji ?? "",
           isMe: false,
           hatName: hatItem?.name ?? "없음",
           hatEmoji: hatItem?.emoji ?? "—",
@@ -526,8 +526,8 @@ export default function HouseCanvas({
       {/* Cottage Sun & Weather Switch Bar */}
       <div className="w-full flex items-center justify-between px-1 text-xs text-[#6b4a2a]">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-[#45240c] flex items-center gap-1">
-            <span>🕰️</span> 집안 시간:
+            <span className="font-bold text-[#45240c] flex items-center gap-1">
+            집안 시간:
           </span>
           <div className="flex rounded-sm bg-[#e6d5bc] p-0.5 border border-[#c9ad8b] text-[11px] shadow-2xs">
             {(["auto", "day", "dusk", "night"] as const).map((m) => (
@@ -540,7 +540,7 @@ export default function HouseCanvas({
                     : "text-[#5c3a1a] hover:bg-[#d8c2a3]"
                 }`}
               >
-                {m === "auto" ? "⏱️ 실시간" : m === "day" ? "☀️ 낮 햇살" : m === "dusk" ? "🌅 저녁 노을" : "🌙 포근한 밤"}
+                {m === "auto" ? "실시간" : m === "day" ? "낮 햇살" : m === "dusk" ? "저녁 노을" : "포근한 밤"}
               </button>
             ))}
           </div>
@@ -548,10 +548,10 @@ export default function HouseCanvas({
 
         <div className="hidden sm:flex items-center gap-2 text-[11px] text-[#785332]">
           <span className="px-2 py-0.5 rounded-md bg-[#fff7ed] border border-[#e7d5b8]">
-            🖱️ 마우스 클릭 또는 WASD로 이동
+            클릭 또는 WASD로 이동
           </span>
           <span className="px-2 py-0.5 rounded-md bg-[#fff7ed] border border-[#e7d5b8]">
-            👤 주민 클릭 시 프로필 확인
+            주민을 클릭하면 프로필 확인
           </span>
         </div>
       </div>
@@ -562,7 +562,7 @@ export default function HouseCanvas({
           ref={canvasRef}
           width={MAP.width}
           height={MAP.height}
-          className="pixelated w-full h-auto block cursor-pointer z-0"
+          className="w-full h-auto block cursor-pointer z-0"
           style={{ aspectRatio: "900/600" }}
         />
 
@@ -580,7 +580,7 @@ export default function HouseCanvas({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-2xl">🧑</span>
+                    <span className="text-xs font-bold text-[#784421]">손님</span>
                   )}
                   {selectedProfile.hatEmoji !== "—" && (
                     <span className="absolute -top-1 -right-1 text-base">{selectedProfile.hatEmoji}</span>
@@ -1422,7 +1422,7 @@ function drawHandcraftedFurniture(
 }
 
 function drawRoomLabel(ctx: CanvasRenderingContext2D, r: (typeof MAP.rooms)[number], isActive: boolean) {
-  const label = `${r.emoji} ${r.name}`;
+  const label = r.name;
   ctx.save();
   ctx.font = "bold 11px sans-serif";
   const tw = ctx.measureText(label).width;

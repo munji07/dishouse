@@ -154,7 +154,7 @@ export default function HouseClient({
       window.setTimeout(() => setHouseMotion("idle"), 700);
       setChats([]);
       const isPublic = house.visibility==='public';
-      setHouseMsg(isPublic ? `🏠 ${house.channel_name} 공용 집 입장` : `🏠 ${house.channel_name} 에 입장 — 나갈 때 Discord 채널이 숨겨집니다.`);
+      setHouseMsg(isPublic ? `${house.channel_name} 공용 집 입장` : `${house.channel_name} 에 입장 — 나갈 때 Discord 채널이 숨겨집니다.`);
       setTimeout(()=>setHouseMsg(null), 3000);
     });
     s.on("house:left", () => {
@@ -171,7 +171,7 @@ export default function HouseClient({
     s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
     s.on("house:members", (rows: HouseMember[]) => setHouseMembers(rows));
     s.on("house:inviteReceived", ({ house, from }: any) => {
-      setHouseMsg(`📩 ${from} 님이 ${house.channelName} 하우스에 초대했습니다!`);
+      setHouseMsg(`${from} 님이 ${house.channelName} 하우스에 초대했습니다.`);
       setTimeout(()=>setHouseMsg(null), 4000);
       s.emit("house:myInvites");
       s.emit("house:list");
@@ -235,7 +235,7 @@ export default function HouseClient({
   const myHouse = meId ? houses.find(h=>h.owner_id===meId) : null;
   const curHouse = isHouseRoom(currentRoom) ? houses.find(h=>h.owner_id===houseOwnerId(currentRoom)) : null;
   const isLinked = curHouse ? !!curHouse.channel_id : !!curRoomRow?.channel_id;
-  const curMeta = curHouse ? { emoji:"🏠", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
+  const curMeta = curHouse ? { emoji:"", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
 
   return (
     <div className="house-client flex flex-col gap-3">
@@ -243,7 +243,7 @@ export default function HouseClient({
       <div className="house-management rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter">
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">
           <div className="text-xs font-black text-[#2d1b0e] flex items-center gap-2">
-            <span>🏠 개인 하우스</span>
+            <span>개인 하우스</span>
             {houseMsg && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">{houseMsg}</span>}
           </div>
           <div className="flex items-center gap-1.5">
@@ -256,7 +256,7 @@ export default function HouseClient({
             {/* 초대 알림 */}
             {myInvites.length>0 && (
               <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 flex flex-col gap-2">
-                <div className="text-xs font-black text-amber-900 flex items-center gap-1.5">📩 초대 알림 <span className="px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px]">{myInvites.length}</span></div>
+                <div className="text-xs font-black text-amber-900 flex items-center gap-1.5">초대 알림 <span className="px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px]">{myInvites.length}</span></div>
                 {myInvites.map(h=>(
                   <div key={h.id} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-2.5 py-1.5 text-xs">
                     <span className="font-bold text-[#2d1b0e]">{h.channel_name} ({h.floor}층・{h.owner_name})</span>
@@ -268,7 +268,7 @@ export default function HouseClient({
             {/* 내 집 관리 */}
             <div className="flex flex-wrap items-center gap-2">
               {!me ? <span className="text-xs text-[#8b6a4a]">로그인 후 내 집을 만들 수 있어요.</span> : !myHouse ? (
-                <button onClick={()=>socket?.emit("house:create")} className="px-4 py-1.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] cursor-pointer">✨ 내 집 생성 — 5층</button>
+                <button onClick={()=>socket?.emit("house:create")} className="px-4 py-1.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] cursor-pointer">내 집 생성 — 5층</button>
               ) : (
                 <>
                   <span className="text-xs font-bold text-[#5c3a1a]">{myHouse.channel_name} · {myHouse.floor}층 · {myHouse.visibility==='public' ? '공용' : myHouse.visibility==='private' ? '비공개' : '초대만'}</span>
@@ -362,7 +362,6 @@ export default function HouseClient({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#fef3c7] border border-[#f5d49a] text-xs font-bold text-[#78350f]">
             <span>현재 위치</span>
             <span className="opacity-40">•</span>
-            <span>{curMeta?.emoji}</span>
             <span>{curMeta?.name}</span>
             <span className="text-[11px] text-[#92400e]/80">
               ({isLinked ? `#${curMeta?.defaultChannel ?? "채널"}` : "채널 미지정"})
@@ -408,7 +407,6 @@ export default function HouseClient({
                         }`}
                       >
                         <span className="flex items-center gap-1.5">
-                          <span>{r.emoji}</span>
                           <span>{r.name}</span>
                         </span>
                         <span
@@ -431,7 +429,6 @@ export default function HouseClient({
             onClick={() => setShowShop(!showShop)}
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] border border-[#5c3a1a] shadow-xs cursor-pointer transition-all"
           >
-            <span>🎨</span>
             <span>옷장/상점</span>
             {shop && (
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/25">
@@ -476,11 +473,10 @@ export default function HouseClient({
         >
           <div className="flex items-center justify-between border-b border-[#e7d5b8] pb-2">
             <div className="flex items-center gap-2">
-              <span className="text-base">🎨</span>
               <span className="text-sm font-black text-[#2d1b0e]">캐릭터 옷장 & 상점</span>
               {shop && (
                 <span className="px-2.5 py-0.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold">
-                  보유 코인: 💰 {shop.coins.toLocaleString()}
+                  보유 코인: {shop.coins.toLocaleString()}C
                 </span>
               )}
             </div>
@@ -507,7 +503,7 @@ export default function HouseClient({
               )}
               <div>
                 <div className="text-xs font-black text-[#5c3a1a] mb-2 flex items-center gap-1">
-                  <span>🧢</span> 모자 아이템
+                  모자 아이템
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {HATS.map((h) => {
@@ -550,7 +546,7 @@ export default function HouseClient({
 
               <div>
                 <div className="text-xs font-black text-[#5c3a1a] mb-2 flex items-center gap-1">
-                  <span>👕</span> 스웨터 색상
+                  스웨터 색상
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {COLORS.map((c) => {
@@ -600,9 +596,6 @@ export default function HouseClient({
       >
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">
           <div className="text-xs font-black text-[#2d1b0e] flex items-center gap-2">
-            <span className="w-5 h-5 rounded-md bg-[#8b5a2b] text-white flex items-center justify-center text-[11px] shadow-xs">
-              {curMeta?.emoji}
-            </span>
             <span>#{curMeta?.defaultChannel ?? "채널"} 대화</span>
             {isLinked ? (
               <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1">
@@ -632,7 +625,7 @@ export default function HouseClient({
             {chats.length === 0 ? (
               <span className="text-[11px] text-[#b89a7a]">
                 {isLinked
-                  ? "아직 메시지가 없어요. 메시지를 입력하면 캐릭터 말풍선과 Discord 채널로 전송돼요! 💬"
+                  ? "아직 메시지가 없어요. 메시지를 입력하면 캐릭터 말풍선과 Discord 채널로 전송돼요."
                   : "이 방은 아직 Discord 채널과 연결되지 않았어요. 관리자에게 /채널지정을 요청하세요."}
               </span>
             ) : (
@@ -669,7 +662,7 @@ export default function HouseClient({
             disabled={!isLinked || !me || !input.trim()}
             className="px-4 py-2 rounded-full bg-[#8b5a2b] text-white disabled:opacity-40 flex items-center justify-center shadow-xs border border-[#5c3a1a] hover:bg-[#6b3d1a] text-xs font-bold cursor-pointer transition-all"
           >
-            전송 ➤
+            전송
           </button>
         </div>
         {error && <div className="px-3 pb-1.5 text-[11px] text-red-600 font-medium">{error}</div>}

@@ -34,7 +34,7 @@ export default async function Home() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={me.avatarUrl} alt={me.displayName} className="w-5 h-5 rounded-full object-cover" />
                   ) : (
-                    <span className="text-xs">🧑</span>
+                    <span className="text-[10px] font-bold text-[#d7ba91]">손님</span>
                   )}
                   <span className="text-xs font-bold text-[#f7ead2]">{me.displayName}</span>
                 </div>
