@@ -9,6 +9,7 @@ export type Direction = "down" | "up" | "left" | "right";
 export type OtherPlayer = { id: string; name: string; avatarUrl: string | null; pos: Pos; room: string };
 export type Bubble = { userId: string; displayName?: string; content: string; expiresAt: number };
 export type TimeMode = "auto" | "day" | "dusk" | "night";
+type ObjectContextMenu = { object: HouseObject; left: number; top: number };
 
 export type ProfileData = {
   id: string;
@@ -148,6 +149,7 @@ export default function HouseCanvas({
 
   const [room, setRoom] = useState("living");
   const [selectedProfile, setSelectedProfile] = useState<ProfileData | null>(null);
+  const [objectContextMenu, setObjectContextMenu] = useState<ObjectContextMenu | null>(null);
   const draggingObjectRef = useRef<{ object: HouseObject; x: number; y: number } | null>(null);
   const didDragObjectRef = useRef(false);
 
@@ -192,7 +194,11 @@ export default function HouseCanvas({
       const sy = c.height / rect.height;
       return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
     };
-    const findObject = (x: number, y: number) => houseObjects.find((object) => object.roomId === room && Math.hypot(x - object.x, y - object.y) < 28);
+    const findObject = (x: number, y: number) => houseObjects
+      .filter((object) => object.roomId === room)
+      .map((object) => ({ object, distance: Math.hypot(x - object.x, y - object.y) }))
+      .filter(({ object, distance }) => distance < (object.isDefault ? 92 : 32))
+      .sort((a, b) => a.distance - b.distance)[0]?.object;
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const point = getCanvasPoint(e);
@@ -226,9 +232,18 @@ export default function HouseCanvas({
       const object = findObject(point.x, point.y);
       if (!object) return;
       e.preventDefault();
-      onObjectRemove?.(object);
+      const rect = c.getBoundingClientRect();
+      setObjectContextMenu({
+        object,
+        left: e.clientX - rect.left,
+        top: e.clientY - rect.top,
+      });
     };
     const onClick = (e: MouseEvent) => {
+      if (objectContextMenu) {
+        setObjectContextMenu(null);
+        return;
+      }
       if (didDragObjectRef.current) {
         didDragObjectRef.current = false;
         return;
@@ -302,16 +317,18 @@ export default function HouseCanvas({
     c.addEventListener("pointerdown", onPointerDown);
     c.addEventListener("pointermove", onPointerMove);
     c.addEventListener("pointerup", onPointerUp);
+    c.addEventListener("pointercancel", onPointerUp);
     c.addEventListener("contextmenu", onContextMenu);
     c.addEventListener("click", onClick);
     return () => {
       c.removeEventListener("pointerdown", onPointerDown);
       c.removeEventListener("pointermove", onPointerMove);
       c.removeEventListener("pointerup", onPointerUp);
+      c.removeEventListener("pointercancel", onPointerUp);
       c.removeEventListener("contextmenu", onContextMenu);
       c.removeEventListener("click", onClick);
     };
-  }, [houseObjects, onObjectInteract, onObjectMove, onObjectRemove, others, othersSkins, room, me, equipped]);
+  }, [houseObjects, objectContextMenu, onObjectInteract, onObjectMove, others, othersSkins, room, me, equipped]);
 
   // Movement physics loop
   useEffect(() => {
@@ -646,6 +663,25 @@ export default function HouseCanvas({
           className="w-full h-auto block cursor-pointer z-0"
           style={{ aspectRatio: "900/600", touchAction: "none" }}
         />
+
+        {objectContextMenu && (
+          <div
+            className="absolute z-40 min-w-32 border-2 border-[#5c3318] bg-[#fffaf0] p-1 shadow-xl"
+            style={{ left: objectContextMenu.left, top: objectContextMenu.top }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="px-2 py-1 text-[11px] font-bold text-[#68482d]">{objectContextMenu.object.name}</div>
+            <button
+              className="w-full bg-red-700 px-2 py-1.5 text-left text-xs font-bold text-white cursor-pointer hover:bg-red-800"
+              onClick={() => {
+                onObjectRemove?.(objectContextMenu.object);
+                setObjectContextMenu(null);
+              }}
+            >
+              가구 삭제
+            </button>
+          </div>
+        )}
 
         {/* Interactive Cottage Guest Profile Card */}
         {selectedProfile && (
