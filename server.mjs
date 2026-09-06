@@ -1719,7 +1719,7 @@ io.on("connection", async (socket) => {
         );
       } catch (error) {
         await changeCoins(userId, object.price).catch(() => {});
-        const msg = String((error as Error).message ?? "");
+        const msg = String(error?.message ?? error ?? "");
         if (msg.includes("duplicate key") || msg.includes("UNIQUE")) throw new Error("이미 같은 가구를 보유하고 있어요. (종류당 1개)");
         throw error;
       }
