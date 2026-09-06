@@ -517,8 +517,7 @@ export default function HouseCanvas({
       // Logical coordinate system 900x600 regardless of backing store
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = true;
-      // @ts-expect-error - imageSmoothingQuality not in all lib.dom types
-      if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+      if ("imageSmoothingQuality" in ctx) (ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
       // Clear logical viewport
       ctx.clearRect(0, 0, MAP.width, MAP.height);
 
