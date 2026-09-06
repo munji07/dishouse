@@ -73,6 +73,17 @@ export default function HouseClient({
   const currentRoomRef = useRef(currentRoom);
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
+  // Close presence dropdown on outside click
+  useEffect(() => {
+    if (!showPresenceList) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest?.("[data-presence-menu]") || target.closest?.("[data-presence-toggle]")) return;
+      setShowPresenceList(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [showPresenceList]);
 
   useEffect(() => {
     const s = io({ withCredentials: true });
@@ -311,7 +322,7 @@ export default function HouseClient({
                     <option value="invite_only">초대만</option>
                     <option value="public">공용 (누구나)</option>
                   </select>
-                  <button disabled={myHouse.visibility==='private'} onClick={()=>requestHouseEntry(meId!)} className={`px-3 py-1 rounded-full text-xs font-bold ${myHouse.visibility==='private' ? "bg-zinc-200 text-zinc-400 cursor-not-allowed" : "bg-[#2d1b0e] text-white cursor-pointer"}`}>{myHouse.visibility==='private' ? "비공개 중" : "내 집 입장"}</button>
+                  <button onClick={()=>requestHouseEntry(meId!)} className="px-3 py-1 rounded-full text-xs font-bold bg-[#2d1b0e] text-white cursor-pointer">내 집 입장</button>
                   <button onClick={()=>{ if (window.confirm("내 집과 Discord 방 6개를 삭제할까요?")) socket?.emit("house:delete"); }} className="px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold cursor-pointer">집 삭제</button>
                   {isHouseRoom(currentRoom) && <button onClick={()=>socket?.emit("house:leave")} className="px-3 py-1 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">거실로 나가기</button>}
                 </>
@@ -418,7 +429,7 @@ export default function HouseClient({
         </div>
       )}
       {/* Sleek Minimal HUD (Section 16 & 17) */}
-        <div className="world-hud rounded-2xl border border-[#e7d5b8] bg-[#fffaf0] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-xs warm-enter">
+        <div className="world-hud relative z-20 rounded-2xl border border-[#e7d5b8] bg-[#fffaf0] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-xs warm-enter isolate">
         {/* Left: Location & Channel info */}
         <div className="flex items-center gap-2">
           <span
@@ -444,10 +455,11 @@ export default function HouseClient({
         </div>
 
         {/* Right: Presence Widget (Section 17) & Wardrobe button */}
-        <div className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-2 relative z-10">
           {/* Section 17: Clickable Online Presence Badge & Dropdown */}
-          <div className="relative">
+          <div className="relative z-30">
             <button
+              data-presence-toggle
               onClick={() => setShowPresenceList(!showPresenceList)}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2d1b0e] text-[#fdf8f0] text-xs font-bold shadow-xs hover:bg-black transition-all cursor-pointer"
             >
@@ -456,9 +468,9 @@ export default function HouseClient({
               <span className="text-[10px] opacity-75">{showPresenceList ? "▲" : "▼"}</span>
             </button>
 
-            {/* Room-by-room Occupancy Popover (Section 17) */}
+            {/* Room-by-room Occupancy Popover (Section 17) - above world-frame/chat */}
             {showPresenceList && (
-              <div className="absolute right-0 top-full mt-2 z-[100] w-52 bg-[#fffaf0] border-2 border-[#8b5a2b] rounded-2xl p-3 shadow-xl warm-enter">
+              <div data-presence-menu className="absolute right-0 top-full mt-2 z-[999] w-52 bg-[#fffaf0] border-2 border-[#8b5a2b] rounded-2xl p-3 shadow-2xl warm-enter max-h-[60vh] overflow-auto">
                 <div className="text-[11px] font-black text-[#8b5a2b] mb-2 px-1 flex items-center justify-between">
                   <span>방별 접속자 현황</span>
                   <span className="text-[10px] text-[#8b6a4a]">클릭 시 이동</span>
@@ -511,12 +523,15 @@ export default function HouseClient({
             )}
           </button>
           {canDecorate && <button onClick={() => setShowObjectShop(!showObjectShop)} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-xs cursor-pointer transition-all ${showObjectShop ? "bg-[#2d1b0e] text-white border-[#2d1b0e]" : "bg-[#fffaf0] text-[#5c3a1a] border-[#b68d61]"}`}><span>가구</span><span className="text-[10px]">{houseObjects.filter((object) => !object.isDefault).length}</span></button>}
+          {!canDecorate && myHouse && !isHouseRoom(currentRoom) && (
+            <button onClick={() => requestHouseEntry(meId!)} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#fffaf0] text-[#5c3a1a] text-xs font-bold border border-[#b68d61] cursor-pointer">내 집에서 가구 구매</button>
+          )}
         </div>
       </div>
 
       {/* 2D House Display Frame */}
       <div
-        className={`world-frame rounded-[24px] border-[5px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_28px_rgba(60,30,10,0.18)] overflow-hidden warm-enter house-motion-${houseMotion}`}
+        className={`world-frame relative z-0 rounded-[24px] border-[5px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_28px_rgba(60,30,10,0.18)] overflow-hidden warm-enter house-motion-${houseMotion}`}
         style={{ animationDelay: "60ms" }}
       >
         <div className="bg-[#fdf8f0] rounded-[18px] overflow-hidden">
@@ -682,7 +697,7 @@ export default function HouseClient({
 
       {/* Slim, Unobtrusive Bottom Chat Bar (Section 19) */}
       <div
-        className="world-chat rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter"
+        className="world-chat relative z-0 rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter"
         style={{ animationDelay: "120ms" }}
       >
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">

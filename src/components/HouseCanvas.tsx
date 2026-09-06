@@ -475,7 +475,7 @@ export default function HouseCanvas({
     const c = canvasRef.current;
     if (!c) return;
     const updateBackingStore = () => {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
       const targetW = Math.round(MAP.width * dpr);
       const targetH = Math.round(MAP.height * dpr);
       if (c.width !== targetW || c.height !== targetH) {
@@ -484,22 +484,25 @@ export default function HouseCanvas({
       }
     };
     updateBackingStore();
-    // React to OS zoom / display change and to element resize
+    window.addEventListener("resize", updateBackingStore);
+    // Also watch for DPR changes (browser zoom)
     const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
     const onDprChange = () => updateBackingStore();
-    // Safari < 14 fallback
-    if (mql.addEventListener) mql.addEventListener("change", onDprChange);
-    else mql.addListener(onDprChange);
-    window.addEventListener("resize", updateBackingStore);
+    try {
+      if (mql.addEventListener) mql.addEventListener("change", onDprChange);
+      else mql.addListener(onDprChange);
+    } catch {}
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(updateBackingStore);
       ro.observe(c);
     }
     return () => {
-      if (mql.removeEventListener) mql.removeEventListener("change", onDprChange);
-      else mql.removeListener(onDprChange);
       window.removeEventListener("resize", updateBackingStore);
+      try {
+        if (mql.removeEventListener) mql.removeEventListener("change", onDprChange);
+        else mql.removeListener(onDprChange);
+      } catch {}
       ro?.disconnect();
     };
   }, []);
@@ -719,13 +722,13 @@ export default function HouseCanvas({
       </div>
 
       {/* 2D Cottage Frame */}
-      <div className="relative z-0 w-full overflow-hidden rounded-sm border-4 border-[#5c3318] shadow-[0_5px_0_rgba(45,20,5,0.28)] bg-[#2b170c]">
+      <div className="relative z-0 w-full overflow-hidden rounded-sm border-4 border-[#5c3318] shadow-[0_5px_0_rgba(45,20,5,0.28)] bg-[#2b170c] flex justify-center">
         <canvas
           ref={canvasRef}
           width={MAP.width}
           height={MAP.height}
-          className="w-full h-auto block cursor-pointer z-0"
-          style={{ aspectRatio: "900/600", touchAction: "none" }}
+          className="w-full max-w-[900px] h-auto block cursor-pointer z-0 mx-auto"
+          style={{ aspectRatio: "900/600", touchAction: "none", imageRendering: "auto" }}
         />
 
         {objectContextMenu && (
