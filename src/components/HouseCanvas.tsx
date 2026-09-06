@@ -162,6 +162,16 @@ export default function HouseCanvas({
     onRoomChange?.(room);
   }, [room, onRoomChange]);
 
+  const toHighResAvatar = useCallback((url: string) => {
+    if (!url) return url;
+    // Discord CDN supports ?size=16..4096. Force 256 for crisp head rendering on DPR 2 displays
+    if (url.includes("cdn.discordapp.com") || url.includes("media.discordapp.net")) {
+      if (/[?&]size=\d+/.test(url)) return url.replace(/([?&]size=)\d+/, "$1256");
+      return url + (url.includes("?") ? "&" : "?") + "size=256";
+    }
+    return url;
+  }, []);
+
   useEffect(() => {
     if (!me?.avatarUrl) {
       avatarImgRef.current = null;
@@ -169,19 +179,19 @@ export default function HouseCanvas({
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = me.avatarUrl;
+    img.src = toHighResAvatar(me.avatarUrl);
     img.onload = () => (avatarImgRef.current = img);
-  }, [me?.avatarUrl]);
+  }, [me?.avatarUrl, toHighResAvatar]);
 
   useEffect(() => {
     for (const o of others) {
       if (!o.avatarUrl || otherImgs.current.has(o.id)) continue;
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.src = o.avatarUrl;
+      img.src = toHighResAvatar(o.avatarUrl);
       img.onload = () => otherImgs.current.set(o.id, img);
     }
-  }, [others]);
+  }, [others, toHighResAvatar]);
 
   // Click handler (Move target & Profile card trigger)
   useEffect(() => {
@@ -190,8 +200,9 @@ export default function HouseCanvas({
 
     const getCanvasPoint = (e: MouseEvent | PointerEvent) => {
       const rect = c.getBoundingClientRect();
-      const sx = c.width / rect.width;
-      const sy = c.height / rect.height;
+      // Use logical MAP size for coordinate mapping so DPR-scaled backing store stays crisp
+      const sx = MAP.width / rect.width;
+      const sy = MAP.height / rect.height;
       return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
     };
     const findObject = (x: number, y: number) => houseObjects
@@ -323,6 +334,14 @@ export default function HouseCanvas({
     c.addEventListener("pointercancel", onPointerUp);
     c.addEventListener("contextmenu", onContextMenu);
     c.addEventListener("click", onClick);
+    const onWindowPointerDown = (e: PointerEvent) => {
+      if (!objectContextMenu) return;
+      const target = e.target as HTMLElement;
+      if (target.closest?.("[data-object-menu]")) return;
+      if (target === c) return;
+      setObjectContextMenu(null);
+    };
+    window.addEventListener("pointerdown", onWindowPointerDown);
     return () => {
       c.removeEventListener("pointerdown", onPointerDown);
       c.removeEventListener("pointermove", onPointerMove);
@@ -330,8 +349,9 @@ export default function HouseCanvas({
       c.removeEventListener("pointercancel", onPointerUp);
       c.removeEventListener("contextmenu", onContextMenu);
       c.removeEventListener("click", onClick);
+      window.removeEventListener("pointerdown", onWindowPointerDown);
     };
-  }, [houseObjects, objectContextMenu, onObjectInteract, onObjectMove, others, othersSkins, room, me, equipped]);
+  }, [houseObjects, objectContextMenu, onObjectInteract, onObjectMove, others, othersSkins, room, me, equipped, toHighResAvatar]);
 
   // Movement physics loop
   useEffect(() => {
@@ -451,6 +471,40 @@ export default function HouseCanvas({
     return "night";
   }, [timeMode]);
 
+  // DPR-aware backing store for crisp rendering on high-DPI displays
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const updateBackingStore = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.round(MAP.width * dpr);
+      const targetH = Math.round(MAP.height * dpr);
+      if (c.width !== targetW || c.height !== targetH) {
+        c.width = targetW;
+        c.height = targetH;
+      }
+    };
+    updateBackingStore();
+    // React to OS zoom / display change and to element resize
+    const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onDprChange = () => updateBackingStore();
+    // Safari < 14 fallback
+    if (mql.addEventListener) mql.addEventListener("change", onDprChange);
+    else mql.addListener(onDprChange);
+    window.addEventListener("resize", updateBackingStore);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(updateBackingStore);
+      ro.observe(c);
+    }
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", onDprChange);
+      else mql.removeListener(onDprChange);
+      window.removeEventListener("resize", updateBackingStore);
+      ro?.disconnect();
+    };
+  }, []);
+
   // Main Canvas Render
   useEffect(() => {
     const c = canvasRef.current;
@@ -459,6 +513,15 @@ export default function HouseCanvas({
     let raf = 0;
 
     const draw = () => {
+      const dpr = window.devicePixelRatio || 1;
+      // Logical coordinate system 900x600 regardless of backing store
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      // @ts-expect-error - imageSmoothingQuality not in all lib.dom types
+      if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+      // Clear logical viewport
+      ctx.clearRect(0, 0, MAP.width, MAP.height);
+
       const t = Date.now() / 1000;
       const timeOfDay = resolvedTime();
       const flicker = 0.94 + Math.sin(t * 4.2) * 0.04 + Math.sin(t * 7.1) * 0.02;
@@ -669,6 +732,7 @@ export default function HouseCanvas({
 
         {objectContextMenu && (
           <div
+            data-object-menu
             className="absolute z-40 min-w-32 border-2 border-[#5c3318] bg-[#fffaf0] p-1 shadow-xl"
             style={{ left: objectContextMenu.left, top: objectContextMenu.top }}
             onPointerDown={(event) => event.stopPropagation()}

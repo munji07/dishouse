@@ -544,6 +544,17 @@ export default function HouseClient({
           </div>
         </div>
       </div>
+      {canDecorate && (
+        <div className="rounded-sm border border-[#e7d5b8] bg-[#fffaf0] px-3 py-2 text-xs text-[#4b321f] leading-relaxed">
+          <span className="font-black">내 집 꾸미기:</span> 상점 <span className="font-bold">집 꾸미기</span> 버튼으로 가구 구매 → 배치 후 <span className="font-bold">드래그</span>로 이동, <span className="font-bold">우클릭</span>으로 삭제(구매가 50% 환불), 오브젝트 <span className="font-bold">클릭</span>으로 상호작용.
+          {!houseObjectsLoaded && <span className="ml-1 text-[#8b5a2b]">로딩 중…</span>}
+        </div>
+      )}
+      {!canDecorate && isHouseRoom(currentRoom) && me && (
+        <div className="rounded-sm border border-[#e7d5b8] bg-[#f5ece0] px-3 py-2 text-xs text-[#68482d]">
+          이 집은 다른 주민의 집입니다. 가구는 집 주인만 배치/삭제할 수 있어요.
+        </div>
+      )}
 
       {/* Wardrobe & Skin Shop Drawer */}
       {showShop && (
