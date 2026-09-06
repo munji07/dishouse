@@ -256,7 +256,7 @@ export default function HouseClient({
   const isLinked = curHouse ? !!curHouse.channel_id : !!curRoomRow?.channel_id;
   const curMeta = curHouse ? { emoji:"", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } : ROOMS.find((r) => r.id === currentRoom);
   const currentHouseOwner = isHouseRoom(currentRoom) ? houseOwnerId(currentRoom) : null;
-  const canDecorate = !!meId && !!curHouse && curHouse.owner_id === meId && currentHouseOwner === meId;
+  const canDecorate = !!meId && currentHouseOwner === meId;
   const objectRoom = isHouseRoom(currentRoom) ? currentRoom.split(":")[2] ?? "living" : "living";
   const handleObjectInteract = (object: HouseObject) => {
     if (isHouseRoom(currentRoom)) {

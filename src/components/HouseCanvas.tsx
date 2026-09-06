@@ -228,10 +228,13 @@ export default function HouseCanvas({
       if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
     };
     const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
       const point = getCanvasPoint(e);
       const object = findObject(point.x, point.y);
-      if (!object) return;
-      e.preventDefault();
+      if (!object) {
+        setObjectContextMenu(null);
+        return;
+      }
       const rect = c.getBoundingClientRect();
       setObjectContextMenu({
         object,
