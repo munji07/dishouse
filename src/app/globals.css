@@ -64,11 +64,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .site-header { box-shadow: 0 2px 0 rgba(62, 39, 23, .25); }
 .house-client { display: flex; }
 .house-management { order: 1; }
-.object-shop { order: 2; }
-.world-frame { order: 3; }
-.world-hud { order: 4; }
-.wardrobe-drawer { order: 5; }
-.world-chat { order: 6; }
+.world-frame { order: 2; }
+.world-hud { order: 3; }
+.object-shop { order: 4; }
+.furniture-dock { order: 5; }
+.wardrobe-drawer { order: 6; }
+.world-chat { order: 7; }
 .house-motion-traveling { animation: houseTravelOut .24s ease-in forwards; }
 .house-motion-arriving { animation: houseTravelIn .62s cubic-bezier(.2,.8,.2,1) both; }
 

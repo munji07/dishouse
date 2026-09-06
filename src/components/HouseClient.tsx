@@ -24,6 +24,41 @@ type InviteReceivedEvent = { house: { channelName: string }; from: string };
 const isHouseRoom = (roomId: string) => roomId.startsWith("house:");
 const houseOwnerId = (roomId: string) => roomId.split(":")[1] ?? "";
 
+// Client-side furniture placement validation (mirrors server.mjs canPlaceHouseObject)
+const FURNITURE_HALF_W = 20;
+const FURNITURE_HALF_H = 20;
+const FURNITURE_ROOMS: Record<string, { x: number; y: number; w: number; h: number }> = {
+  living: { x: 28, y: 28, w: 326, h: 262 },
+  kitchen: { x: 354, y: 28, w: 264, h: 162 },
+  bathroom: { x: 618, y: 28, w: 254, h: 162 },
+  bedroom: { x: 28, y: 290, w: 262, h: 282 },
+  room1: { x: 290, y: 190, w: 310, h: 382 },
+  room2: { x: 600, y: 190, w: 272, h: 382 },
+};
+const FURNITURE_WALLS: [number, number, number, number][] = [
+  [354, 28, 354, 72], [354, 120, 354, 190], [624, 28, 624, 72], [624, 120, 624, 190],
+  [290, 190, 290, 215], [290, 263, 290, 290], [290, 310, 290, 390], [290, 438, 290, 572],
+  [588, 190, 588, 330], [588, 378, 588, 572], [28, 290, 96, 290], [144, 290, 290, 290], [354, 190, 624, 190],
+];
+const FURNITURE_DOORS: [number, number, number, number][] = [
+  [348, 72, 12, 48], [612, 72, 12, 48], [96, 286, 48, 8], [286, 215, 8, 48], [284, 390, 12, 48], [594, 330, 12, 48],
+];
+function canPlaceClient(roomId: string, x: number, y: number, objects: HouseObject[], ignoreId: string | null = null): { ok: boolean; reason?: string } {
+  const room = FURNITURE_ROOMS[roomId];
+  if (!room || !Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: "방 정보를 찾을 수 없습니다." };
+  if (x - FURNITURE_HALF_W < room.x || x + FURNITURE_HALF_W > room.x + room.w || y - FURNITURE_HALF_H < room.y || y + FURNITURE_HALF_H > room.y + room.h) return { ok: false, reason: "벽에는 설치할 수 없습니다." };
+  for (const [x1, y1, x2, y2] of FURNITURE_WALLS) {
+    if (x1 === x2 && Math.abs(x - x1) < FURNITURE_HALF_W && y + FURNITURE_HALF_H > Math.min(y1, y2) && y - FURNITURE_HALF_H < Math.max(y1, y2)) return { ok: false, reason: "벽에는 설치할 수 없습니다." };
+    if (y1 === y2 && Math.abs(y - y1) < FURNITURE_HALF_H && x + FURNITURE_HALF_W > Math.min(x1, x2) && x - FURNITURE_HALF_W < Math.max(x1, x2)) return { ok: false, reason: "벽에는 설치할 수 없습니다." };
+  }
+  for (const [dx, dy, dw, dh] of FURNITURE_DOORS) {
+    if (x + FURNITURE_HALF_W > dx && x - FURNITURE_HALF_W < dx + dw && y + FURNITURE_HALF_H > dy && y - FURNITURE_HALF_H < dy + dh) return { ok: false, reason: "문 앞에는 설치할 수 없습니다." };
+  }
+  const overlap = objects.some((o) => String(o.instanceId) !== String(ignoreId) && o.roomId === roomId && Math.abs(Number(o.x) - x) < FURNITURE_HALF_W * 2 && Math.abs(Number(o.y) - y) < FURNITURE_HALF_H * 2);
+  if (overlap) return { ok: false, reason: "다른 가구와 겹칩니다." };
+  return { ok: true };
+}
+
 export default function HouseClient({
   me,
 }: {
@@ -71,6 +106,7 @@ export default function HouseClient({
   const meId = me?.discordId ?? null;
   const roomsRef = useRef(rooms);
   const currentRoomRef = useRef(currentRoom);
+  const prevHouseObjectsRef = useRef<HouseObject[] | null>(null);
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
   // Close presence dropdown on outside click
@@ -190,12 +226,28 @@ export default function HouseClient({
       setMyInvites((prev) => prev.filter((house) => house.owner_id !== ownerId));
     });
     s.on("house:ok", ({ message }: MessageEvent) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
-    s.on("house:error", ({ message }: MessageEvent) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
+    s.on("house:error", ({ message }: MessageEvent) => {
+      // Revert optimistic furniture update if this error is furniture-related
+      if (prevHouseObjectsRef.current && /벽|가구|설치|겹침|공간|보유/.test(message)) {
+        setHouseObjects(prevHouseObjectsRef.current);
+        prevHouseObjectsRef.current = null;
+        const friendly = message.includes("벽") ? "벽에는 설치 불가합니다. 원래 위치로 돌아갑니다." : message;
+        setObjectMessage(friendly);
+        setTimeout(()=>setObjectMessage(null), 3000);
+      } else if (prevHouseObjectsRef.current) {
+        // Generic furniture error still revert if we were pending
+        // Only revert if message looks like furniture failure (keep simple)
+        // Otherwise clear pending to avoid stuck state
+        prevHouseObjectsRef.current = null;
+      }
+      setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000);
+    });
     s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
     s.on("house:members", (rows: HouseMember[]) => setHouseMembers(rows));
     s.on("house:objects", (rows: HouseObject[]) => {
       setHouseObjects(rows);
       setHouseObjectsLoaded(true);
+      prevHouseObjectsRef.current = null;
     });
     s.on("house:objectMessage", ({ message }: { message: string }) => {
       setObjectMessage(message);
@@ -274,11 +326,50 @@ export default function HouseClient({
       socket?.emit("house:objectInteract", { instanceId: object.instanceId, roomId: currentRoom });
     }
   };
+  const handleBuyObject = (objectId: string, roomId: string) => {
+    if (!canDecorate) return;
+    const catalog = HOUSE_OBJECTS.find((c) => c.id === objectId);
+    if (!catalog) return;
+    // Use actual spawn position from server (OBJECT_ROOM_POSITIONS)
+    const spawn = { living: {x:250,y:210}, bedroom:{x:210,y:500}, kitchen:{x:520,y:145}, bathroom:{x:800,y:145}, room1:{x:500,y:470}, room2:{x:800,y:470}}[roomId as keyof typeof FURNITURE_ROOMS] ?? {x:250,y:210};
+    const wallCheck = canPlaceClient(roomId, spawn.x, spawn.y, houseObjects);
+    if (!wallCheck.ok) {
+      setObjectMessage(wallCheck.reason ?? "벽에는 설치할 수 없습니다.");
+      setTimeout(()=>setObjectMessage(null), 2500);
+      return;
+    }
+    // Optimistic: immediately add temp item for snappy feedback
+    // eslint-disable-next-line react-hooks/purity -- temp id generated on user action, not during render
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+    const optimistic: HouseObject = { instanceId: tempId, objectId: catalog.id, name: catalog.name, symbol: catalog.symbol, roomId, x: spawn.x, y: spawn.y, isDefault: false, purchasePrice: catalog.price, interactive: catalog.interactive, interaction: catalog.interaction };
+    prevHouseObjectsRef.current = houseObjects;
+    setHouseObjects((prev) => [...prev, optimistic]);
+    setObjectMessage(`${catalog.name} 배치 중...`);
+    socket?.emit("house:buyObject", { objectId, roomId });
+  };
   const handleObjectMove = (object: HouseObject, roomId: string, x: number, y: number) => {
-    if (canDecorate) socket?.emit("house:placeObject", { instanceId: object.instanceId, roomId, x, y });
+    if (!canDecorate) return;
+    const nx = Math.round(Number(x));
+    const ny = Math.round(Number(y));
+    const check = canPlaceClient(roomId, nx, ny, houseObjects, String(object.instanceId));
+    if (!check.ok) {
+      const msg = check.reason === "벽에는 설치할 수 없습니다." ? "벽에는 설치 불가합니다. 원래 위치로 돌아갑니다." : (check.reason ?? "설치할 수 없습니다.");
+      setObjectMessage(msg);
+      setTimeout(()=>setObjectMessage(null), 2500);
+      // revert is automatic – we didn't apply optimistic update
+      return;
+    }
+    // Optimistic update: browser instantly shows new position
+    prevHouseObjectsRef.current = houseObjects;
+    setHouseObjects((prev) => prev.map((o) => String(o.instanceId) === String(object.instanceId) ? { ...o, roomId, x: nx, y: ny } : o));
+    socket?.emit("house:placeObject", { instanceId: object.instanceId, roomId, x: nx, y: ny });
   };
   const handleObjectRemove = (object: HouseObject) => {
-    if (canDecorate && window.confirm(`${object.name}을(를) 삭제하고 일부 코인을 환불할까요?`)) socket?.emit("house:removeObject", { instanceId: object.instanceId });
+    if (!canDecorate) return;
+    if (!window.confirm(`${object.name}을(를) 삭제하고 일부 코인을 환불할까요?`)) return;
+    prevHouseObjectsRef.current = houseObjects;
+    setHouseObjects((prev) => prev.filter((o) => String(o.instanceId) !== String(object.instanceId)));
+    socket?.emit("house:removeObject", { instanceId: object.instanceId });
   };
 
   return (
@@ -393,26 +484,50 @@ export default function HouseClient({
         <div className="object-shop rounded-2xl border border-[#b68d61] bg-[#fffaf0] p-4 flex flex-col gap-3 warm-enter">
           <div className="flex items-center justify-between border-b border-[#e7d5b8] pb-2">
             <div>
-              <div className="text-sm font-black text-[#2d1b0e]">집 꾸미기</div>
-              <div className="text-[11px] text-[#68482d]">현재 방: {ROOMS.find((room) => room.id === objectRoom)?.name ?? objectRoom} · 코인 {shop?.coins.toLocaleString() ?? 0}C</div>
+              <div className="text-sm font-black text-[#2d1b0e]">집 꾸미기 — 가구 구매 & 보유</div>
+              <div className="text-[11px] text-[#68482d]">현재 방: {ROOMS.find((room) => room.id === objectRoom)?.name ?? objectRoom} · 코인 {shop?.coins.toLocaleString() ?? 0}C · 보유 {houseObjects.filter((o)=>!o.isDefault).length}개</div>
             </div>
-            <span className="text-[11px] text-[#68482d]">기본 가구는 환불되지 않습니다.</span>
+            <button onClick={()=>setShowObjectShop(false)} className="text-[11px] px-2.5 py-1 rounded-full bg-[#2d1b0e] text-white font-bold cursor-pointer">닫기 ✕</button>
           </div>
           {objectMessage && <div className="border-l-2 border-[#8b5a2b] bg-[#f4e4cc] px-3 py-2 text-xs font-bold text-[#4b321f]">{objectMessage}</div>}
           <div>
-            <div className="mb-2 text-xs font-black text-[#5c3a1a]">기본 배치</div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-black text-[#5c3a1a]">보유중인 가구 ({houseObjects.filter((o)=>!o.isDefault).length})</span>
+              <span className="text-[11px] text-[#68482d]">드래그로 이동 · 우클릭으로 삭제 · 클릭으로 상호작용</span>
+            </div>
+            {houseObjects.filter((o)=>!o.isDefault).length === 0 ? (
+              <div className="border border-dashed border-[#e7d5b8] bg-white px-3 py-3 text-xs text-[#68482d] text-center">아직 구매한 가구가 없습니다. 아래에서 구매해보세요.</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {houseObjects.filter((o)=>!o.isDefault).map((object) => (
+                  <div key={object.instanceId} className="flex items-center justify-between border border-[#e7d5b8] bg-white px-3 py-2 text-xs text-[#4b321f]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-7 h-7 grid place-items-center border border-[#e7d5b8] bg-[#fffaf0] text-sm text-[#8b5a2b] font-black">{object.symbol}</span>
+                      <div>
+                        <div className="font-bold">{object.name}</div>
+                        <div className="text-[11px] text-[#68482d]">{ROOMS.find((r)=>r.id===object.roomId)?.name ?? object.roomId} · {object.x},{object.y}</div>
+                      </div>
+                    </div>
+                    <button onClick={() => handleObjectRemove(object)} className="border border-[#c7a77f] px-2 py-1 text-[11px] font-bold text-[#68482d] cursor-pointer hover:bg-[#fff7ed]">삭제</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="mb-2 text-xs font-black text-[#5c3a1a]">기본 배치 (삭제 시 환불 없음)</div>
             <div className="flex flex-wrap gap-2">
               {houseObjects.filter((object) => object.isDefault).map((object) => (
                 <div key={object.instanceId} className="flex items-center gap-2 border border-[#e7d5b8] bg-white px-2.5 py-2 text-xs text-[#4b321f]">
                   <span>{object.name}</span>
-                  <button onClick={() => socket?.emit("house:removeObject", { instanceId: object.instanceId })} className="border border-[#c7a77f] px-2 py-0.5 text-[11px] font-bold text-[#68482d] cursor-pointer">삭제</button>
+                  <button onClick={() => handleObjectRemove(object)} className="border border-[#c7a77f] px-2 py-0.5 text-[11px] font-bold text-[#68482d] cursor-pointer">삭제</button>
                 </div>
               ))}
               {houseObjects.filter((object) => object.isDefault).length === 0 && <span className="text-xs text-[#68482d]">기본 배치를 모두 비웠습니다.</span>}
             </div>
           </div>
           <div>
-            <div className="mb-2 text-xs font-black text-[#5c3a1a]">구매 가능한 오브젝트</div>
+            <div className="mb-2 text-xs font-black text-[#5c3a1a]">구매 가능한 오브젝트 — {objectRoom}에 배치됩니다</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {HOUSE_OBJECTS.map((object) => {
                 const owned = houseObjects.some((placed) => placed.objectId === object.id);
@@ -420,7 +535,7 @@ export default function HouseClient({
                 return (
                   <div key={object.id} className="flex items-center justify-between border border-[#e7d5b8] bg-white px-3 py-2 text-xs text-[#4b321f]">
                     <div><span className="mr-2 text-base text-[#8b5a2b]">{object.symbol}</span><span className="font-bold">{object.name}</span><span className="ml-2 text-[#68482d]">{object.price}C</span></div>
-                    <button disabled={owned || !affordable} onClick={() => socket?.emit("house:buyObject", { objectId: object.id, roomId: objectRoom })} className="border border-[#8b5a2b] bg-[#8b5a2b] px-2 py-1 text-[11px] font-bold text-white disabled:border-[#d6c7b8] disabled:bg-[#e7d5b8] disabled:text-[#8f765c] cursor-pointer">{owned ? "보유" : affordable ? "구매" : "코인 부족"}</button>
+                    <button disabled={owned || !affordable} onClick={() => handleBuyObject(object.id, objectRoom)} className="border border-[#8b5a2b] bg-[#8b5a2b] px-2 py-1 text-[11px] font-bold text-white disabled:border-[#d6c7b8] disabled:bg-[#e7d5b8] disabled:text-[#8f765c] cursor-pointer">{owned ? "보유" : affordable ? "구매" : "코인 부족"}</button>
                   </div>
                 );
               })}
@@ -528,6 +643,39 @@ export default function HouseClient({
           )}
         </div>
       </div>
+
+      {/* 가구 퀵 도크 — 실시간 접속/현재 위치 바로 아래 */}
+      {isHouseRoom(currentRoom) && (
+        <div className="furniture-dock rounded-sm border border-[#b68d61] bg-[#fffaf0] p-3 flex flex-col gap-2 warm-enter">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-black text-[#2d1b0e]">보유중인 가구 · {houseObjects.filter((o)=>!o.isDefault).length}개</div>
+            <div className="flex items-center gap-1.5">
+              {canDecorate ? (
+                <button onClick={()=>setShowObjectShop(!showObjectShop)} className={`text-[11px] px-2.5 py-1 rounded-full font-bold border cursor-pointer ${showObjectShop ? "bg-[#2d1b0e] text-white border-[#2d1b0e]" : "bg-white text-[#5c3a1a] border-[#b68d61]"}`}>{showObjectShop ? "구매창 닫기" : "가구 구매창 열기"}</button>
+              ) : (
+                <span className="text-[11px] text-[#68482d]">구매는 내 집에서만 가능</span>
+              )}
+              <span className="text-[11px] text-[#68482d]">코인 {shop?.coins.toLocaleString() ?? 0}C</span>
+            </div>
+          </div>
+          {houseObjects.filter((o)=>!o.isDefault).length > 0 ? (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {houseObjects.filter((o)=>!o.isDefault).map((o)=> (
+                <div key={o.instanceId} className="shrink-0 flex items-center gap-2 border border-[#e7d5b8] bg-white px-2.5 py-1.5 text-xs">
+                  <span className="w-6 h-6 grid place-items-center bg-[#fffaf0] border border-[#e7d5b8] text-[#8b5a2b] font-black">{o.symbol}</span>
+                  <span className="font-bold text-[#4b321f]">{o.name}</span>
+                  <span className="text-[11px] text-[#68482d]">{ROOMS.find((r)=>r.id===o.roomId)?.name ?? o.roomId}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-[#68482d] border border-dashed border-[#e7d5b8] bg-white px-3 py-2 text-center">
+              {canDecorate ? "아직 보유한 가구가 없습니다. 구매창에서 첫 가구를 구매해보세요." : "이 집에는 아직 배치된 가구가 없습니다."}
+            </div>
+          )}
+          {objectMessage && <div className="border-l-2 border-[#8b5a2b] bg-[#f4e4cc] px-3 py-1.5 text-xs font-bold text-[#4b321f]">{objectMessage}</div>}
+        </div>
+      )}
 
       {/* 2D House Display Frame */}
       <div
