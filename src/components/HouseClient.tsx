@@ -17,6 +17,9 @@ type ChatMsg = {
   content: string;
   createdAt: string;
 };
+type HouseEnteredEvent = { house: HouseRow; roomId: string };
+type MessageEvent = { message: string };
+type InviteReceivedEvent = { house: { channelName: string }; from: string };
 
 const isHouseRoom = (roomId: string) => roomId.startsWith("house:");
 const houseOwnerId = (roomId: string) => roomId.split(":")[1] ?? "";
@@ -73,9 +76,11 @@ export default function HouseClient({
 
   useEffect(() => {
     const s = io({ withCredentials: true });
-    setSocket(s);
 
-    s.on("connect", () => setConnected(true));
+    s.on("connect", () => {
+      setSocket(s);
+      setConnected(true);
+    });
     s.on("disconnect", () => setConnected(false));
     s.on("connect_error", ({ message }) => {
       setConnected(false);
@@ -150,10 +155,10 @@ export default function HouseClient({
     });
     s.on("playerSkin", ({ userId, skin }) => setOthersSkins((p) => ({ ...p, [userId]: skin })));
     // houses
-    s.on("houses", (rows: HouseRow[]) => setHouses(rows as any));
+    s.on("houses", (rows: HouseRow[]) => setHouses(rows));
     s.on("house:list", (rows: HouseRow[]) => setHouses(rows));
     s.on("house:created", () => { s.emit("house:list"); s.emit("house:myInvites"); });
-    s.on("house:entered", ({ house, roomId }: any) => {
+    s.on("house:entered", ({ house, roomId }: HouseEnteredEvent) => {
       setCurrentRoom(roomId);
       setHouseMotion("arriving");
       window.setTimeout(() => setHouseMotion("idle"), 700);
@@ -173,8 +178,8 @@ export default function HouseClient({
       setHouses((prev) => prev.filter((house) => house.owner_id !== ownerId));
       setMyInvites((prev) => prev.filter((house) => house.owner_id !== ownerId));
     });
-    s.on("house:ok", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
-    s.on("house:error", ({ message }: any) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
+    s.on("house:ok", ({ message }: MessageEvent) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
+    s.on("house:error", ({ message }: MessageEvent) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 3000); });
     s.on("house:myInvites", (rows: HouseRow[]) => setMyInvites(rows));
     s.on("house:members", (rows: HouseMember[]) => setHouseMembers(rows));
     s.on("house:objects", (rows: HouseObject[]) => {
@@ -185,7 +190,7 @@ export default function HouseClient({
       setObjectMessage(message);
       window.setTimeout(() => setObjectMessage(null), 3000);
     });
-    s.on("house:inviteReceived", ({ house, from }: any) => {
+    s.on("house:inviteReceived", ({ house, from }: InviteReceivedEvent) => {
       setHouseMsg(`${from} 님이 ${house.channelName} 하우스에 초대했습니다.`);
       setTimeout(()=>setHouseMsg(null), 4000);
       s.emit("house:myInvites");
@@ -201,7 +206,6 @@ export default function HouseClient({
     if (!socket) return;
     if (isHouseRoom(currentRoom)) return; // house enter handles itself
     socket.emit("joinRoom", currentRoom);
-    setChats([]);
   }, [socket, currentRoom]);
   useEffect(() => {
     if (!socket) return;
@@ -250,7 +254,7 @@ export default function HouseClient({
   const myHouse = meId ? houses.find(h=>h.owner_id===meId) : null;
   const curHouse = isHouseRoom(currentRoom) ? houses.find(h=>h.owner_id===houseOwnerId(currentRoom)) : null;
   const isLinked = curHouse ? !!curHouse.channel_id : !!curRoomRow?.channel_id;
-  const curMeta = curHouse ? { emoji:"", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } as any : ROOMS.find((r) => r.id === currentRoom);
+  const curMeta = curHouse ? { emoji:"", name: curHouse.channel_name ?? `${curHouse.owner_name}의 집`, defaultChannel: curHouse.channel_name ?? "개인집" } : ROOMS.find((r) => r.id === currentRoom);
   const currentHouseOwner = isHouseRoom(currentRoom) ? houseOwnerId(currentRoom) : null;
   const canDecorate = !!meId && !!curHouse && curHouse.owner_id === meId && currentHouseOwner === meId;
   const objectRoom = isHouseRoom(currentRoom) ? currentRoom.split(":")[2] ?? "living" : "living";
@@ -258,6 +262,12 @@ export default function HouseClient({
     if (isHouseRoom(currentRoom)) {
       socket?.emit("house:objectInteract", { instanceId: object.instanceId, roomId: currentRoom });
     }
+  };
+  const handleObjectMove = (object: HouseObject, roomId: string, x: number, y: number) => {
+    if (canDecorate) socket?.emit("house:placeObject", { instanceId: object.instanceId, roomId, x, y });
+  };
+  const handleObjectRemove = (object: HouseObject) => {
+    if (canDecorate && window.confirm(`${object.name}을(를) 삭제하고 일부 코인을 환불할까요?`)) socket?.emit("house:removeObject", { instanceId: object.instanceId });
   };
 
   return (
@@ -326,6 +336,7 @@ export default function HouseClient({
                     <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-[#e7d5b8] bg-white p-1.5 shadow-xl">
                       {houseMembers.map((member) => (
                         <button key={member.id} onClick={()=>{ setSelectedInvitee(member); setInviteInput(member.name); setHouseMembers([]); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-[#fff7ed] cursor-pointer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={member.avatarUrl} alt="" className="h-6 w-6 rounded-full" />
                           <span><b>{member.name}</b><small className="ml-1 text-zinc-400">@{member.username}</small></span>
                         </button>
@@ -341,7 +352,7 @@ export default function HouseClient({
             <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto">
               {houses.length===0 ? <span className="text-xs text-[#b89a7a]">아직 생성된 하우스가 없습니다. 첫 번째 집을 만들어보세요!</span> : houses.map(h=>{
                 const isMine = h.owner_id===meId;
-                const canEnter = ((h as any).canEnter ?? (isMine || h.visibility==='public'));
+                const canEnter = h.canEnter ?? (isMine || h.visibility==='public');
                 const badge = h.visibility==='public' ? '공용' : h.visibility==='private' ? '비공개' : '초대만';
                 const badgeColor = h.visibility==='public' ? 'bg-emerald-600' : 'bg-[#2d1b0e]';
                 return (
@@ -499,6 +510,7 @@ export default function HouseClient({
               </span>
             )}
           </button>
+          {canDecorate && <button onClick={() => setShowObjectShop(!showObjectShop)} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-xs cursor-pointer transition-all ${showObjectShop ? "bg-[#2d1b0e] text-white border-[#2d1b0e]" : "bg-[#fffaf0] text-[#5c3a1a] border-[#b68d61]"}`}><span>가구</span><span className="text-[10px]">{houseObjects.filter((object) => !object.isDefault).length}</span></button>}
         </div>
       </div>
 
@@ -524,6 +536,8 @@ export default function HouseClient({
               houseObjects={houseObjects}
               houseObjectsLoaded={houseObjectsLoaded}
               onObjectInteract={handleObjectInteract}
+              onObjectMove={handleObjectMove}
+              onObjectRemove={handleObjectRemove}
               timeMode={timeMode}
               onTimeModeChange={setTimeMode}
             />

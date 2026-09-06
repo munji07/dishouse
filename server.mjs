@@ -113,6 +113,33 @@ const OBJECT_ROOM_POSITIONS = {
   room1: { x: 500, y: 470 },
   room2: { x: 800, y: 470 },
 };
+const OBJECT_HALF_WIDTH = 20;
+const OBJECT_HALF_HEIGHT = 20;
+const OBJECT_SOLID_WALLS = [
+  [354, 28, 354, 72], [354, 120, 354, 190], [624, 28, 624, 72], [624, 120, 624, 190],
+  [290, 190, 290, 215], [290, 263, 290, 290], [290, 310, 290, 390], [290, 438, 290, 572],
+  [588, 190, 588, 330], [588, 378, 588, 572], [28, 290, 96, 290], [144, 290, 290, 290], [354, 190, 624, 190],
+];
+const OBJECT_DOORS = [
+  [348, 72, 12, 48], [612, 72, 12, 48], [96, 286, 48, 8], [286, 215, 8, 48], [284, 390, 12, 48], [594, 330, 12, 48],
+];
+const OBJECT_ROOMS = {
+  living: { x: 28, y: 28, w: 326, h: 262 }, kitchen: { x: 354, y: 28, w: 264, h: 162 }, bathroom: { x: 618, y: 28, w: 254, h: 162 },
+  bedroom: { x: 28, y: 290, w: 262, h: 282 }, room1: { x: 290, y: 190, w: 310, h: 382 }, room2: { x: 600, y: 190, w: 272, h: 382 },
+};
+function canPlaceHouseObject(roomId, x, y, objects, ignoreId = null) {
+  const room = OBJECT_ROOMS[roomId];
+  if (!room || !Number.isFinite(x) || !Number.isFinite(y)) return false;
+  if (x - OBJECT_HALF_WIDTH < room.x || x + OBJECT_HALF_WIDTH > room.x + room.w || y - OBJECT_HALF_HEIGHT < room.y || y + OBJECT_HALF_HEIGHT > room.y + room.h) return false;
+  for (const [x1, y1, x2, y2] of OBJECT_SOLID_WALLS) {
+    if (x1 === x2 && Math.abs(x - x1) < OBJECT_HALF_WIDTH && y + OBJECT_HALF_HEIGHT > Math.min(y1, y2) && y - OBJECT_HALF_HEIGHT < Math.max(y1, y2)) return false;
+    if (y1 === y2 && Math.abs(y - y1) < OBJECT_HALF_HEIGHT && x + OBJECT_HALF_WIDTH > Math.min(x1, x2) && x - OBJECT_HALF_WIDTH < Math.max(x1, x2)) return false;
+  }
+  for (const [doorX, doorY, doorW, doorH] of OBJECT_DOORS) {
+    if (x + OBJECT_HALF_WIDTH > doorX && x - OBJECT_HALF_WIDTH < doorX + doorW && y + OBJECT_HALF_HEIGHT > doorY && y - OBJECT_HALF_HEIGHT < doorY + doorH) return false;
+  }
+  return !objects.some((object) => String(object.id) !== String(ignoreId) && object.room_id === roomId && Math.abs(Number(object.x) - x) < OBJECT_HALF_WIDTH * 2 && Math.abs(Number(object.y) - y) < OBJECT_HALF_HEIGHT * 2);
+}
 const LEVEL_GUILD_ID = "1538513625730383902";
 
 // ── PG 기반 코인/XP (코인 = 경험치) ──────────────────────────────────────
@@ -245,21 +272,6 @@ async function getInventory(userId) {
     equipped_color: row.equipped_color || "#8b5a2b",
   };
 }
-async function addCoinsPG(userId, delta) {
-  if (pgPool) {
-    await pgPool.query(
-      "UPDATE user_progress SET coins = GREATEST(0, coins + $1), xp = GREATEST(0, xp + $1), updated_at=now() WHERE guild_id=$2 AND user_id=$3",
-      [delta, LEVEL_GUILD_ID, userId],
-    );
-    return;
-  }
-  supportDb
-    ?.prepare(
-      "UPDATE user_progress SET coins = MAX(0, coins + ?) WHERE guild_id=? AND user_id=?",
-    )
-    .run(delta, LEVEL_GUILD_ID, userId);
-}
-
 // 후원 랭킹
 try {
   supportDb?.exec(
@@ -1680,6 +1692,8 @@ io.on("connection", async (socket) => {
       if (!object) throw new Error("존재하지 않는 오브젝트입니다.");
       if (!ROOM_IDS.includes(roomId)) throw new Error("배치할 방을 찾을 수 없습니다.");
       const position = OBJECT_ROOM_POSITIONS[roomId];
+      const { rows: existingObjects } = await pool.query("SELECT id, room_id, x, y FROM dishouse_house_objects WHERE house_id=$1", [house.id]);
+      if (!canPlaceHouseObject(roomId, position.x, position.y, existingObjects)) throw new Error("그 방에는 가구를 놓을 공간이 없습니다.");
       const coins = await changeCoins(userId, -object.price);
       try {
         await pool.query(
@@ -1693,6 +1707,26 @@ io.on("connection", async (socket) => {
       socket.emit("shop:state", { ...(await getInventory(userId)), coins, xp: coins });
       socket.emit("house:objects", await getHouseObjects(house.id));
       socket.emit("house:objectMessage", { message: `${object.name}을(를) ${roomId}에 놓았습니다.` });
+    } catch (e) {
+      socket.emit("house:error", { message: String(e.message) });
+    }
+  });
+  socket.on("house:placeObject", async ({ instanceId, roomId, x, y } = {}) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
+      if (!house || house.owner_id !== userId) throw new Error("내 집에서만 가구를 배치할 수 있습니다.");
+      if (!ROOM_IDS.includes(roomId)) throw new Error("배치할 방을 찾을 수 없습니다.");
+      const nextX = Math.round(Number(x));
+      const nextY = Math.round(Number(y));
+      const { rows: objects } = await pool.query("SELECT id, room_id, x, y, is_default FROM dishouse_house_objects WHERE house_id=$1", [house.id]);
+      const current = objects.find((object) => String(object.id) === String(instanceId));
+      if (!current) throw new Error("가구를 찾을 수 없습니다.");
+      if (current.is_default) throw new Error("기본 가구는 이동할 수 없습니다.");
+      if (!canPlaceHouseObject(roomId, nextX, nextY, objects, String(instanceId))) throw new Error("가구가 벽, 문 또는 다른 가구와 겹칩니다.");
+      await pool.query("UPDATE dishouse_house_objects SET room_id=$1, x=$2, y=$3 WHERE id=$4 AND house_id=$5 AND is_default=false", [roomId, nextX, nextY, instanceId, house.id]);
+      socket.emit("house:objects", await getHouseObjects(house.id));
+      socket.emit("house:objectMessage", { message: "가구를 배치했습니다." });
     } catch (e) {
       socket.emit("house:error", { message: String(e.message) });
     }
@@ -1925,7 +1959,7 @@ io.on("connection", async (socket) => {
         [userId],
       );
       socket.emit("house:myInvites", rows);
-    } catch (e) {
+    } catch {
       socket.emit("house:myInvites", []);
     }
   });

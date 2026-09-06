@@ -1,8 +1,7 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
-import { ROOMS } from "@/lib/constants";
-import { HATS, COLORS } from "@/lib/skins";
+import { HATS } from "@/lib/skins";
 import type { HouseObject } from "@/lib/houseObjects";
 
 export type Pos = { x: number; y: number };
@@ -118,6 +117,8 @@ export default function HouseCanvas({
   houseObjects = [],
   houseObjectsLoaded = false,
   onObjectInteract,
+  onObjectMove,
+  onObjectRemove,
   timeMode = "auto",
   onTimeModeChange,
 }: {
@@ -131,6 +132,8 @@ export default function HouseCanvas({
   houseObjects?: HouseObject[];
   houseObjectsLoaded?: boolean;
   onObjectInteract?: (object: HouseObject) => void;
+  onObjectMove?: (object: HouseObject, roomId: string, x: number, y: number) => void;
+  onObjectRemove?: (object: HouseObject) => void;
   timeMode?: TimeMode;
   onTimeModeChange?: (mode: TimeMode) => void;
 }) {
@@ -145,8 +148,10 @@ export default function HouseCanvas({
 
   const [room, setRoom] = useState("living");
   const [selectedProfile, setSelectedProfile] = useState<ProfileData | null>(null);
+  const draggingObjectRef = useRef<{ object: HouseObject; x: number; y: number } | null>(null);
+  const didDragObjectRef = useRef(false);
 
-  const equipped = mySkin ?? { hat: "none", color: "#8b5a2b" };
+  const equipped = useMemo(() => mySkin ?? { hat: "none", color: "#8b5a2b" }, [mySkin]);
   const avatarImgRef = useRef<HTMLImageElement | null>(null);
   const otherImgs = useRef<Map<string, HTMLImageElement>>(new Map());
   const lastEmit = useRef(0);
@@ -181,12 +186,54 @@ export default function HouseCanvas({
     const c = canvasRef.current;
     if (!c) return;
 
-    const onClick = (e: MouseEvent) => {
+    const getCanvasPoint = (e: MouseEvent | PointerEvent) => {
       const rect = c.getBoundingClientRect();
       const sx = c.width / rect.width;
       const sy = c.height / rect.height;
-      const clickX = (e.clientX - rect.left) * sx;
-      const clickY = (e.clientY - rect.top) * sy;
+      return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+    };
+    const findObject = (x: number, y: number) => houseObjects.find((object) => object.roomId === room && Math.hypot(x - object.x, y - object.y) < 28);
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const point = getCanvasPoint(e);
+      const object = findObject(point.x, point.y);
+      if (!object || object.isDefault) return;
+      draggingObjectRef.current = { object, x: point.x, y: point.y };
+      didDragObjectRef.current = false;
+      c.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      const dragging = draggingObjectRef.current;
+      if (!dragging) return;
+      const point = getCanvasPoint(e);
+      if (Math.hypot(point.x - dragging.x, point.y - dragging.y) > 4) didDragObjectRef.current = true;
+      dragging.x = point.x;
+      dragging.y = point.y;
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const dragging = draggingObjectRef.current;
+      if (!dragging) return;
+      const point = getCanvasPoint(e);
+      draggingObjectRef.current = null;
+      if (didDragObjectRef.current) {
+        const targetRoom = MAP.rooms.find((candidate) => point.x >= candidate.x && point.x <= candidate.x + candidate.w && point.y >= candidate.y && point.y <= candidate.y + candidate.h)?.id;
+        if (targetRoom) onObjectMove?.(dragging.object, targetRoom, point.x, point.y);
+      }
+      if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      const point = getCanvasPoint(e);
+      const object = findObject(point.x, point.y);
+      if (!object) return;
+      e.preventDefault();
+      onObjectRemove?.(object);
+    };
+    const onClick = (e: MouseEvent) => {
+      if (didDragObjectRef.current) {
+        didDragObjectRef.current = false;
+        return;
+      }
+      const { x: clickX, y: clickY } = getCanvasPoint(e);
 
       // Click on an interactive house object
       for (const object of houseObjects) {
@@ -252,9 +299,19 @@ export default function HouseCanvas({
       };
     };
 
+    c.addEventListener("pointerdown", onPointerDown);
+    c.addEventListener("pointermove", onPointerMove);
+    c.addEventListener("pointerup", onPointerUp);
+    c.addEventListener("contextmenu", onContextMenu);
     c.addEventListener("click", onClick);
-    return () => c.removeEventListener("click", onClick);
-  }, [houseObjects, onObjectInteract, others, othersSkins, room, me, equipped]);
+    return () => {
+      c.removeEventListener("pointerdown", onPointerDown);
+      c.removeEventListener("pointermove", onPointerMove);
+      c.removeEventListener("pointerup", onPointerUp);
+      c.removeEventListener("contextmenu", onContextMenu);
+      c.removeEventListener("click", onClick);
+    };
+  }, [houseObjects, onObjectInteract, onObjectMove, onObjectRemove, others, othersSkins, room, me, equipped]);
 
   // Movement physics loop
   useEffect(() => {
@@ -409,7 +466,7 @@ export default function HouseCanvas({
         drawLivingFireplace(ctx, flicker, timeOfDay, t);
       }
 
-      drawPlacedObjects(ctx, houseObjects, room, t);
+      drawPlacedObjects(ctx, houseObjects, room, t, draggingObjectRef.current);
 
       // 5. Target pointer
       if (targetRef.current) {
@@ -587,7 +644,7 @@ export default function HouseCanvas({
           width={MAP.width}
           height={MAP.height}
           className="w-full h-auto block cursor-pointer z-0"
-          style={{ aspectRatio: "900/600" }}
+          style={{ aspectRatio: "900/600", touchAction: "none" }}
         />
 
         {/* Interactive Cottage Guest Profile Card */}
@@ -1446,12 +1503,15 @@ function drawHandcraftedFurniture(
   ctx.restore();
 }
 
-function drawPlacedObjects(ctx: CanvasRenderingContext2D, objects: HouseObject[], room: string, t: number) {
+function drawPlacedObjects(ctx: CanvasRenderingContext2D, objects: HouseObject[], room: string, t: number, dragging: { object: HouseObject; x: number; y: number } | null = null) {
   for (const object of objects) {
     if (object.isDefault || object.roomId !== room) continue;
+    const drawX = dragging?.object.instanceId === object.instanceId ? dragging.x : object.x;
+    const drawY = dragging?.object.instanceId === object.instanceId ? dragging.y : object.y;
     const pulse = object.interactive ? 1 + Math.sin(t * 3 + object.x) * 0.04 : 1;
     ctx.save();
-    ctx.translate(object.x, object.y);
+    ctx.translate(drawX, drawY);
+    if (dragging?.object.instanceId === object.instanceId) ctx.globalAlpha = 0.68;
     ctx.fillStyle = "rgba(45, 27, 14, 0.24)";
     ctx.beginPath();
     ctx.ellipse(0, 12, 22 * pulse, 7, 0, 0, Math.PI * 2);

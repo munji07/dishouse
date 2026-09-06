@@ -3,6 +3,12 @@ import { getPool } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 
 const GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
+type HouseRecord = {
+  id: number;
+  owner_id: string;
+  visibility: string;
+};
+type InviteRecord = { target_id: string };
 
 export async function GET() {
   const sess = await getSession();
@@ -13,7 +19,7 @@ export async function GET() {
     await pool.query(`CREATE TABLE IF NOT EXISTS dishouse_house_invites (house_id INT NOT NULL REFERENCES dishouse_houses(id) ON DELETE CASCADE, target_id TEXT NOT NULL, invited_by TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (house_id, target_id))`);
     const { rows } = await pool.query(`SELECT * FROM dishouse_houses WHERE guild_id=$1 ORDER BY floor`, [GUILD_ID]);
     // enrich canEnter
-    const enriched = await Promise.all(rows.map(async (h: any) => {
+    const enriched = await Promise.all(rows.map(async (h: HouseRecord) => {
       let canEnter = false;
       if (!viewerId) canEnter = false;
       else if (h.owner_id === viewerId) canEnter = true;
@@ -25,9 +31,9 @@ export async function GET() {
         canEnter = !!inv[0];
       }
       const { rows: invites } = await pool.query(`SELECT target_id FROM dishouse_house_invites WHERE house_id=$1`, [h.id]);
-      return { ...h, canEnter, inviteIds: invites.map((r:any)=>r.target_id) };
+      return { ...h, canEnter, inviteIds: invites.map((r: InviteRecord) => r.target_id) };
     }));
-    const myHouse = viewerId ? rows.find((r:any)=>r.owner_id===viewerId) ?? null : null;
+    const myHouse = viewerId ? rows.find((r: HouseRecord) => r.owner_id === viewerId) ?? null : null;
     return NextResponse.json({ houses: enriched, myHouse });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
