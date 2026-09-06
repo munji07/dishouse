@@ -11,6 +11,7 @@ type HouseMember = { id: string; name: string; username: string; avatarUrl: stri
 type ChatMsg = {
   id: string;
   roomId: string;
+  channelId?: string;
   author: { displayName: string; avatar: string | null };
   content: string;
   createdAt: string;
@@ -57,9 +58,12 @@ export default function HouseClient({
   const [houseMembers, setHouseMembers] = useState<HouseMember[]>([]);
   const [selectedInvitee, setSelectedInvitee] = useState<HouseMember | null>(null);
   const [myInvites, setMyInvites] = useState<HouseRow[]>([]);
+  const [houseMotion, setHouseMotion] = useState<"idle" | "traveling" | "arriving">("idle");
 
   const meId = me?.discordId ?? null;
+  const roomsRef = useRef(rooms);
   const currentRoomRef = useRef(currentRoom);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
 
   useEffect(() => {
@@ -68,6 +72,10 @@ export default function HouseClient({
 
     s.on("connect", () => setConnected(true));
     s.on("disconnect", () => setConnected(false));
+    s.on("connect_error", ({ message }) => {
+      setConnected(false);
+      setError(message || "사이트 이용 권한을 확인할 수 없습니다.");
+    });
     s.on("rooms", (rows: RoomRow[]) => setRooms(rows));
     s.on("presence", (p) => setPresence(p));
 
@@ -99,10 +107,15 @@ export default function HouseClient({
 
     s.on("chat", (msg: ChatMsg) => {
       if (msg.roomId !== currentRoomRef.current) return;
+      if (!isHouseRoom(msg.roomId)) {
+        const channelId = roomsRef.current.find((room) => room.id === msg.roomId)?.channel_id;
+        if (!channelId || msg.channelId !== channelId) return;
+      }
       setChats((prev) => [...prev.slice(-49), msg]);
     });
 
-    s.on("bubble", ({ userId, displayName, content }) => {
+    s.on("bubble", ({ userId, displayName, content, roomId }) => {
+      if (roomId && roomId !== currentRoomRef.current) return;
       const id = userId;
       setBubbles((prev) => ({
         ...prev,
@@ -137,6 +150,8 @@ export default function HouseClient({
     s.on("house:created", () => { s.emit("house:list"); s.emit("house:myInvites"); });
     s.on("house:entered", ({ house, roomId }: any) => {
       setCurrentRoom(roomId);
+      setHouseMotion("arriving");
+      window.setTimeout(() => setHouseMotion("idle"), 700);
       setChats([]);
       const isPublic = house.visibility==='public';
       setHouseMsg(isPublic ? `🏠 ${house.channel_name} 공용 집 입장` : `🏠 ${house.channel_name} 에 입장 — 나갈 때 Discord 채널이 숨겨집니다.`);
@@ -190,6 +205,11 @@ export default function HouseClient({
     }
   };
 
+  const requestHouseEntry = (ownerId: string, acceptInvite = false) => {
+    setHouseMotion("traveling");
+    socket?.emit(acceptInvite ? "house:acceptInvite" : "house:enter", { ownerId });
+  };
+
   const handleSend = () => {
     if (!socket || !input.trim()) return;
     if (isHouseRoom(currentRoom)) {
@@ -220,7 +240,7 @@ export default function HouseClient({
   return (
     <div className="house-client flex flex-col gap-3">
       {/* Houses Panel — 개인 하우스 */}
-      <div className="rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter">
+      <div className="house-management rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter">
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">
           <div className="text-xs font-black text-[#2d1b0e] flex items-center gap-2">
             <span>🏠 개인 하우스</span>
@@ -240,7 +260,7 @@ export default function HouseClient({
                 {myInvites.map(h=>(
                   <div key={h.id} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-2.5 py-1.5 text-xs">
                     <span className="font-bold text-[#2d1b0e]">{h.channel_name} ({h.floor}층・{h.owner_name})</span>
-                    <button onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold cursor-pointer">입장</button>
+                    <button onClick={()=>requestHouseEntry(h.owner_id, true)} className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold cursor-pointer">초대 수락 후 입장</button>
                   </div>
                 ))}
               </div>
@@ -257,7 +277,7 @@ export default function HouseClient({
                     <option value="invite_only">초대만</option>
                     <option value="public">공용 (누구나)</option>
                   </select>
-                  <button disabled={myHouse.visibility==='private'} onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className={`px-3 py-1 rounded-full text-xs font-bold ${myHouse.visibility==='private' ? "bg-zinc-200 text-zinc-400 cursor-not-allowed" : "bg-[#2d1b0e] text-white cursor-pointer"}`}>{myHouse.visibility==='private' ? "비공개 중" : "내 집 입장"}</button>
+                  <button disabled={myHouse.visibility==='private'} onClick={()=>requestHouseEntry(meId!)} className={`px-3 py-1 rounded-full text-xs font-bold ${myHouse.visibility==='private' ? "bg-zinc-200 text-zinc-400 cursor-not-allowed" : "bg-[#2d1b0e] text-white cursor-pointer"}`}>{myHouse.visibility==='private' ? "비공개 중" : "내 집 입장"}</button>
                   <button onClick={()=>{ if (window.confirm("내 집과 Discord 방 6개를 삭제할까요?")) socket?.emit("house:delete"); }} className="px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold cursor-pointer">집 삭제</button>
                   {isHouseRoom(currentRoom) && <button onClick={()=>socket?.emit("house:leave")} className="px-3 py-1 rounded-full bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer">거실로 나가기</button>}
                 </>
@@ -268,9 +288,9 @@ export default function HouseClient({
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-bold text-[#8b6a4a]">빠른 이동:</span>
               <button onClick={()=>{ setCurrentRoom("living"); socket?.emit("joinRoom","living"); }} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${currentRoom==="living" ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>거실(공용)</button>
-              {myHouse && <button onClick={()=>socket?.emit("house:enter", { ownerId: meId })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===meId ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>내 집</button>}
+              {myHouse && <button onClick={()=>requestHouseEntry(meId!)} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===meId ? "bg-[#8b5a2b] text-white" : "bg-[#f5ece0] border border-[#e7d5b8]"}`}>내 집</button>}
               {houses.filter(h=>h.visibility==='public').slice(0,3).map(h=>(
-                <button key={h.id} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===h.owner_id ? "bg-emerald-600 text-white" : "bg-emerald-50 border border-emerald-200 text-emerald-800"}`}>공용 {h.floor}층</button>
+                <button key={h.id} onClick={()=>requestHouseEntry(h.owner_id)} className={`px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer ${isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===h.owner_id ? "bg-emerald-600 text-white" : "bg-emerald-50 border border-emerald-200 text-emerald-800"}`}>공용 {h.floor}층</button>
               ))}
             </div>
             {/* 초대 */}
@@ -312,7 +332,7 @@ export default function HouseClient({
                       {isHouseRoom(currentRoom) && houseOwnerId(currentRoom)===h.owner_id ? (
                         <button onClick={()=>socket?.emit("house:leave")} className="px-2.5 py-1 rounded-full bg-zinc-300 text-zinc-700 font-bold cursor-pointer">나가기</button>
                       ) : (
-                        <button disabled={!canEnter} onClick={()=>socket?.emit("house:enter", { ownerId: h.owner_id })} className={`px-2.5 py-1 rounded-full font-bold ${canEnter ? "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a] cursor-pointer" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>{canEnter ? "입장" : h.visibility==='private' && isMine ? "비공개 중" : "초대필요"}</button>
+                        <button disabled={!canEnter} onClick={()=>requestHouseEntry(h.owner_id)} className={`px-2.5 py-1 rounded-full font-bold ${canEnter ? "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a] cursor-pointer" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>{canEnter ? "입장" : h.visibility==='private' && isMine ? "비공개 중" : "초대필요"}</button>
                       )}
                     </div>
                   </div>
@@ -324,7 +344,7 @@ export default function HouseClient({
         )}
       </div>
       {/* Sleek Minimal HUD (Section 16 & 17) */}
-      <div className="rounded-2xl border border-[#e7d5b8] bg-[#fffaf0]/95 backdrop-blur px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-xs warm-enter">
+        <div className="world-hud rounded-2xl border border-[#e7d5b8] bg-[#fffaf0] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-xs warm-enter">
         {/* Left: Location & Channel info */}
         <div className="flex items-center gap-2">
           <span
@@ -424,20 +444,13 @@ export default function HouseClient({
 
       {/* 2D House Display Frame */}
       <div
-        className="rounded-[24px] border-[5px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_28px_rgba(60,30,10,0.18)] overflow-hidden warm-enter"
+        className={`world-frame rounded-[24px] border-[5px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_28px_rgba(60,30,10,0.18)] overflow-hidden warm-enter house-motion-${houseMotion}`}
         style={{ animationDelay: "60ms" }}
       >
         <div className="bg-[#fdf8f0] rounded-[18px] overflow-hidden">
-          <div className="h-8 bg-gradient-to-b from-[#8b5a2b] to-[#6b3d1a] flex items-center justify-between px-3.5">
-            <div className="flex gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57] border border-black/20" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-black/20" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#28c840] border border-black/20" />
-            </div>
-            <div className="text-[11px] font-black tracking-widest text-[#fde68a] flex items-center gap-1.5">
-              <span>🏠</span> DISHOUSE — 2D VIRTUAL HOME
-            </div>
-            <div className="text-[10px] text-[#fde68a]/75 font-mono">Stardew-inspired 2D</div>
+          <div className="h-8 bg-[#6b3d1a] flex items-center justify-between px-3.5">
+            <div className="text-[11px] font-black tracking-widest text-[#fde68a]">공용 생활관 · DISHOUSE</div>
+            <div className="text-[10px] text-[#fde68a]/75">{curMeta?.name ?? "거실"}에 머무는 중</div>
           </div>
           <div className="p-2 sm:p-3 bg-[#26150a]">
             <HouseCanvas
@@ -458,7 +471,7 @@ export default function HouseClient({
       {/* Wardrobe & Skin Shop Drawer */}
       {showShop && (
         <div
-          className="rounded-2xl border-2 border-[#8b5a2b] bg-[#fffaf0] shadow-md p-4 flex flex-col gap-3 warm-enter"
+          className="wardrobe-drawer rounded-2xl border-2 border-[#8b5a2b] bg-[#fffaf0] shadow-md p-4 flex flex-col gap-3 warm-enter"
           style={{ animationDelay: "100ms" }}
         >
           <div className="flex items-center justify-between border-b border-[#e7d5b8] pb-2">
@@ -582,7 +595,7 @@ export default function HouseClient({
 
       {/* Slim, Unobtrusive Bottom Chat Bar (Section 19) */}
       <div
-        className="rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter"
+        className="world-chat rounded-2xl border border-[#e7d5b8] bg-white shadow-xs overflow-hidden warm-enter"
         style={{ animationDelay: "120ms" }}
       >
         <div className="h-9 bg-[#fff7ed] border-b border-[#e7d5b8] flex items-center justify-between px-3.5">

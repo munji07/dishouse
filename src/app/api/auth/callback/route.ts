@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discordAvatarUrl, setSession } from "@/lib/auth";
 
+const ACCESS_ROLE_ID = "1545582928233242724";
+const ACCESS_GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
+
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
   if (!code) return NextResponse.json({ error: "missing code" }, { status: 400 });
@@ -39,6 +42,18 @@ export async function GET(req: NextRequest) {
     headers: { Authorization: `Bearer ${token.access_token}` },
   });
   const me = await meRes.json();
+
+  const memberRes = await fetch(
+    `https://discord.com/api/users/@me/guilds/${ACCESS_GUILD_ID}/member`,
+    { headers: { Authorization: `Bearer ${token.access_token}` } },
+  );
+  if (!memberRes.ok) {
+    return NextResponse.redirect(`${baseUrl}/?access=denied`);
+  }
+  const member = await memberRes.json();
+  if (!Array.isArray(member.roles) || !member.roles.includes(ACCESS_ROLE_ID)) {
+    return NextResponse.redirect(`${baseUrl}/?access=denied`);
+  }
 
   await setSession({
     discordId: me.id,

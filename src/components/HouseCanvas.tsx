@@ -529,14 +529,14 @@ export default function HouseCanvas({
           <span className="font-bold text-[#45240c] flex items-center gap-1">
             <span>🕰️</span> 집안 시간:
           </span>
-          <div className="flex rounded-xl bg-[#e6d5bc] p-0.5 border border-[#c9ad8b] text-[11px] shadow-2xs">
+          <div className="flex rounded-sm bg-[#e6d5bc] p-0.5 border border-[#c9ad8b] text-[11px] shadow-2xs">
             {(["auto", "day", "dusk", "night"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => onTimeModeChange?.(m)}
                 className={`px-2.5 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
                   timeMode === m
-                    ? "bg-[#6b3d1a] text-[#fef3c7] shadow-xs scale-105"
+                    ? "bg-[#6b3d1a] text-[#fef3c7] shadow-xs"
                     : "text-[#5c3a1a] hover:bg-[#d8c2a3]"
                 }`}
               >
@@ -557,7 +557,7 @@ export default function HouseCanvas({
       </div>
 
       {/* 2D Cottage Frame */}
-      <div className="relative z-0 w-full overflow-hidden rounded-2xl border-4 border-[#5c3318] shadow-[0_16px_36px_rgba(45,20,5,0.28)] bg-[#2b170c]">
+      <div className="relative z-0 w-full overflow-hidden rounded-sm border-4 border-[#5c3318] shadow-[0_5px_0_rgba(45,20,5,0.28)] bg-[#2b170c]">
         <canvas
           ref={canvasRef}
           width={MAP.width}

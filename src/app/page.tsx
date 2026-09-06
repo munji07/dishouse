@@ -13,25 +13,15 @@ export default async function Home() {
 
   return (
     <div className="page-shell flex min-h-screen flex-col">
-      {/* Roof header (Section 19: DISHOUSE / Profile) */}
-      <header className="site-header sticky top-0 z-20 border-b border-[#e7d5b8] bg-[#fffaf0]/95 backdrop-blur warm-enter">
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#5c3a1a] via-[#8b5a2b] to-[#5c3a1a] relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-300/30 to-transparent bg-[length:200%_100%] animate-[shimmer_3s_ease-in-out_infinite]" />
-        </div>
-        <div className="max-w-[980px] mx-auto px-4 py-2 flex items-center justify-between">
+      <header className="site-header sticky top-0 z-20 border-b border-[#b98d5f] bg-[#2f241a] text-[#f7ead2]">
+        <div className="max-w-[1180px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#8b5a2b] flex items-center justify-center text-white text-base shadow-sm border border-[#5c3a1a] warm-glow select-none">
-              🏠
-            </div>
             <div>
-              <div className="font-black tracking-tight leading-none text-[#2d1b0e] text-base flex items-center gap-1.5">
+              <div className="font-display tracking-wide leading-none text-[#f7ead2] text-lg">
                 DISHOUSE
-                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-amber-900">
-                  2D Community
-                </span>
               </div>
-              <div className="text-[10px] tracking-wider text-[#8b5a2b] font-medium mt-0.5">
-                Discord가 살아 숨쉬는 따뜻한 집
+              <div className="text-[10px] tracking-wide text-[#c9aa80] mt-1">
+                오늘도 집에 사람이 있습니다
               </div>
             </div>
           </div>
@@ -46,11 +36,11 @@ export default async function Home() {
                   ) : (
                     <span className="text-xs">🧑</span>
                   )}
-                  <span className="text-xs font-bold text-[#2d1b0e]">{me.displayName}</span>
+                  <span className="text-xs font-bold text-[#f7ead2]">{me.displayName}</span>
                 </div>
                 <a
                   href="/api/auth/logout"
-                  className="px-3 py-1 rounded-full bg-[#2d1b0e] text-[#fdf8f0] text-xs font-bold hover:bg-black transition-colors shadow-xs"
+                  className="border-l border-[#755638] pl-3 text-xs font-bold text-[#d7ba91] hover:text-white transition-colors"
                 >
                   로그아웃
                 </a>
@@ -58,53 +48,37 @@ export default async function Home() {
             ) : (
               <a
                 href="/api/auth/login"
-                className="px-3.5 py-1.5 rounded-full bg-[#5865F2] text-white text-xs font-black hover:bg-[#4752c4] shadow-sm flex items-center gap-1.5 transition-all active:scale-95"
+                className="border border-[#d6b77e] px-3 py-1.5 text-[#f7ead2] text-xs font-black hover:bg-[#4b3928] transition-colors"
               >
-                <span>🔑</span> Discord로 입장하기
+                Discord로 입장하기
               </a>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Page (2D House as Hero) */}
-      <main className="flex-1 max-w-[980px] mx-auto w-full px-3 sm:px-4 py-3 flex flex-col gap-2.5">
+      <main className="flex-1 max-w-[1180px] mx-auto w-full px-3 sm:px-5 py-5 flex flex-col gap-3">
         {!me && (
-          <div className="rounded-xl border border-[#eddcc6] bg-[#fffaf0] px-3.5 py-2 flex items-center justify-between text-xs text-[#5c3a1a] shadow-2xs warm-enter">
+          <div className="guest-note border-l-2 border-[#c48a45] px-3 py-1 flex items-center justify-between text-xs text-[#725333]">
             <div className="flex items-center gap-2">
-              <span className="text-base">🏡</span>
               <span>
-                <b>게스트 모드</b>로 둘러보는 중입니다. Discord로 로그인하면 내 아바타로 집 안을 돌아다니며 채팅할 수
-                있어요!
+                <b>손님으로 둘러보는 중</b>입니다. Discord로 들어오면 이 집의 주민이 됩니다.
               </span>
             </div>
-            <a
-              href="/api/auth/login"
-              className="shrink-0 font-black text-[#5865F2] hover:underline ml-2 text-xs"
-            >
-              로그인하기 →
-            </a>
+            <a href="/api/auth/login" className="shrink-0 font-black text-[#8b5a2b] hover:underline ml-2 text-xs">입장하기</a>
           </div>
         )}
 
         {/* The 2D Interactive House */}
         <HouseClient me={me} />
 
-        {/* Guidance Footer */}
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[11px] text-[#a88a6a] pt-1 pb-1">
-          <span>⌨️ 이동: WASD / 방향키 / 클릭 이동</span>
-          <span>•</span>
-          <span>🚪 문을 통과하면 자동으로 다른 방 이동</span>
-          <span>•</span>
-          <span>💬 채팅 시 머리 위 말풍선 & Discord 실시간 동기화</span>
-          <span>•</span>
-          <span>👤 캐릭터 클릭 시 프로필 확인</span>
+        <div className="flex items-center justify-between text-[11px] text-[#92704e] pt-1 pb-1">
+          <span>집 안을 클릭해 걸어보세요</span>
+          <span>WASD · 방향키</span>
         </div>
       </main>
 
-      <footer className="py-2.5 text-center text-[11px] text-[#b89a7a] border-t border-[#f0e4d2]">
-        © DISHOUSE — Discord를 하나의 아늑한 2D 생활 공간으로
-      </footer>
+      <footer className="py-3 px-5 text-right text-[10px] text-[#a98b6b] border-t border-[#e4d3bc]">DISHOUSE / discord 생활관</footer>
     </div>
   );
 }

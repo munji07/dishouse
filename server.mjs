@@ -324,6 +324,7 @@ const ROOM_EMOJI = {
   bathroom: "🚿",
 };
 const HOUSE_GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
+const SITE_ACCESS_ROLE_ID = "1545582928233242724";
 
 // ── Houses DB ──────────────────────────────────────────────────────────
 async function ensureHouseTables() {
@@ -1150,12 +1151,25 @@ function broadcastPresence() {
   io.emit("presence", { total, byRoom });
 }
 
-io.use((socket, nextFn) => {
+io.use(async (socket, nextFn) => {
   const cookieHeader = socket.handshake.headers.cookie;
   const raw = parseCookieInline(cookieHeader, COOKIE_NAME);
   const sess = decodeSessionInline(raw);
-  socket.data.session = sess; // may be null (guest)
-  nextFn();
+  if (!sess?.discordId) {
+    return nextFn(new Error("Discord 로그인과 지정 역할이 필요합니다."));
+  }
+  try {
+    const guild = await getHouseGuild();
+    const member = await guild.members.fetch(sess.discordId);
+    if (!member.roles.cache.has(SITE_ACCESS_ROLE_ID)) {
+      return nextFn(new Error("사이트 이용 역할이 없습니다."));
+    }
+    socket.data.session = sess;
+    nextFn();
+  } catch (error) {
+    console.warn("[socket access]", error.message);
+    nextFn(new Error("Discord 서버 멤버 확인에 실패했습니다."));
+  }
 });
 
 io.on("connection", async (socket) => {
@@ -1163,7 +1177,7 @@ io.on("connection", async (socket) => {
   const userId = sess?.discordId ?? `guest:${socket.id.slice(0, 6)}`;
   const displayName = sess?.displayName ?? sess?.username ?? "게스트";
   const avatarUrl = sess?.avatarUrl ?? null;
-  const isGuest = userId.startsWith("guest:");
+  const isGuest = false;
 
   console.log(`[socket] connect ${socket.id} as ${displayName} (${userId})`);
 
@@ -1628,6 +1642,59 @@ io.on("connection", async (socket) => {
       socket.emit("house:error", { message: String(e.message) });
     }
   });
+  async function enterHouse(ownerId) {
+    const house = await getHouseByOwner(HOUSE_GUILD_ID, ownerId);
+    if (!house?.channel_id) throw new Error("하우스가 없습니다.");
+    const can = await canAccessHouse(house, userId);
+    if (!can) {
+      throw new Error(
+        house.visibility === "private"
+          ? "비공개 하우스입니다."
+          : "초대되지 않은 하우스입니다. 소유자에게 초대를 요청하세요.",
+      );
+    }
+    await leaveCurrentHouse();
+    if (house.owner_id !== userId) {
+      const guild =
+        discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ??
+        (await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(() => null));
+      const accessChannelId = house.category_id || house.channel_id;
+      if (guild) await grantHouseChannelView(guild, accessChannelId, userId);
+      activeHouseGrant.channelId = accessChannelId;
+      activeHouseGrant.houseId = house.id;
+    }
+    for (const rid of ROOM_IDS) socket.leave(`room:${rid}`);
+    for (const [key] of [...socket.rooms]) {
+      if (key.startsWith("room:house:")) socket.leave(key);
+    }
+    const houseRoomId = `house:${house.owner_id}:living`;
+    socket.join(`room:${houseRoomId}`);
+    const prev = presence.get(socket.id);
+    if (prev) presence.set(socket.id, { ...prev, room: houseRoomId });
+    broadcastPresence();
+    socket.emit("house:entered", { house, roomId: houseRoomId });
+    io.emit("house:presence", { houseId: house.id, ownerId: house.owner_id });
+  }
+  socket.on("house:enter", async ({ ownerId }) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      await enterHouse(ownerId);
+    } catch (e) {
+      socket.emit("house:error", { message: String(e.message) });
+    }
+  });
+  socket.on("house:acceptInvite", async ({ ownerId }) => {
+    if (isGuest) return socket.emit("house:error", { message: "로그인 필요" });
+    try {
+      const house = await getHouseByOwner(HOUSE_GUILD_ID, ownerId);
+      if (!house || !(await isHouseInvited(house.id, userId))) {
+        return socket.emit("house:error", { message: "유효한 초대가 없습니다." });
+      }
+      await enterHouse(ownerId);
+    } catch (e) {
+      socket.emit("house:error", { message: String(e.message) });
+    }
+  });
   socket.on("house:inviteRemove", async ({ targetId }) => {
     try {
       const house = await getHouseByOwner(HOUSE_GUILD_ID, userId);
@@ -1637,7 +1704,6 @@ io.on("connection", async (socket) => {
         `DELETE FROM dishouse_house_invites WHERE house_id=$1 AND target_id=$2`,
         [house.id, String(targetId)],
       );
-      // revoke if that user is currently inside
       const guild =
         discordClient?.guilds.cache.get(HOUSE_GUILD_ID) ??
         (await discordClient?.guilds.fetch(HOUSE_GUILD_ID).catch(() => null));
@@ -1673,8 +1739,7 @@ io.on("connection", async (socket) => {
       socket.emit("house:ok", {
         message: `공개 범위를 ${label}으로 변경했습니다.`,
       });
-      const rows = await getHouses(HOUSE_GUILD_ID);
-      io.emit("houses", rows);
+      io.emit("houses", await getHouses(HOUSE_GUILD_ID));
     } catch (e) {
       socket.emit("house:error", { message: String(e.message) });
     }
@@ -1723,7 +1788,6 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("chat", async ({ roomId, content }) => {
-    if (!content || typeof content !== "string") return;
     const text = content.trim().slice(0, 500);
     if (!text) return;
     const channelId = await getChannelByRoom(roomId);
