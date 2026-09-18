@@ -389,7 +389,6 @@ const ROOM_EMOJI = {
   bathroom: "🚿",
 };
 const HOUSE_GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
-const SITE_ACCESS_ROLE_ID = "1545582928233242724";
 
 // ── Houses DB ──────────────────────────────────────────────────────────
 async function ensureHouseTables() {
@@ -1251,20 +1250,10 @@ io.use(async (socket, nextFn) => {
   const raw = parseCookieInline(cookieHeader, COOKIE_NAME);
   const sess = decodeSessionInline(raw);
   if (!sess?.discordId) {
-    return nextFn(new Error("Discord 로그인과 지정 역할이 필요합니다."));
+    return nextFn(new Error("Discord 로그인이 필요합니다."));
   }
-  try {
-    const guild = await getHouseGuild();
-    const member = await guild.members.fetch(sess.discordId);
-    if (!member.roles.cache.has(SITE_ACCESS_ROLE_ID)) {
-      return nextFn(new Error("사이트 이용 역할이 없습니다."));
-    }
-    socket.data.session = sess;
-    nextFn();
-  } catch (error) {
-    console.warn("[socket access]", error.message);
-    nextFn(new Error("Discord 서버 멤버 확인에 실패했습니다."));
-  }
+  socket.data.session = sess;
+  return nextFn();
 });
 
 io.on("connection", async (socket) => {
