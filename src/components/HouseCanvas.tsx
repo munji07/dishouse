@@ -485,13 +485,24 @@ export default function HouseCanvas({
     };
     updateBackingStore();
     window.addEventListener("resize", updateBackingStore);
-    // Also watch for DPR changes (browser zoom)
-    const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-    const onDprChange = () => updateBackingStore();
-    try {
-      if (mql.addEventListener) mql.addEventListener("change", onDprChange);
-      else mql.addListener(onDprChange);
-    } catch {}
+    // Watch for DPR changes (browser zoom / OS scale) — re-create MQL on change
+    let mql: MediaQueryList | null = null;
+    const watchDpr = () => {
+      try {
+        mql?.removeEventListener?.("change", watchDpr);
+        // @ts-ignore legacy
+        mql?.removeListener?.(watchDpr);
+      } catch {}
+      mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      try {
+        mql.addEventListener("change", watchDpr);
+      } catch {
+        // @ts-ignore legacy Safari
+        mql.addListener(watchDpr);
+      }
+      updateBackingStore();
+    };
+    watchDpr();
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(updateBackingStore);
@@ -500,8 +511,9 @@ export default function HouseCanvas({
     return () => {
       window.removeEventListener("resize", updateBackingStore);
       try {
-        if (mql.removeEventListener) mql.removeEventListener("change", onDprChange);
-        else mql.removeListener(onDprChange);
+        mql?.removeEventListener?.("change", watchDpr);
+        // @ts-ignore legacy
+        mql?.removeListener?.(watchDpr);
       } catch {}
       ro?.disconnect();
     };
@@ -721,13 +733,13 @@ export default function HouseCanvas({
         </div>
       </div>
 
-      {/* 2D Cottage Frame — full-bleed, no side gaps */}
-      <div className="relative z-0 w-full overflow-hidden rounded-sm border-4 border-[#5c3318] shadow-[0_5px_0_rgba(45,20,5,0.28)] bg-[#2b170c] flex">
+      {/* 2D Cottage Frame — centered, max 900px to keep crisp; outer gaps filled by body pattern */}
+      <div className="relative z-0 w-full overflow-hidden rounded-sm border-4 border-[#5c3318] shadow-[0_5px_0_rgba(45,20,5,0.28)] bg-[#2b170c] flex justify-center">
         <canvas
           ref={canvasRef}
           width={MAP.width}
           height={MAP.height}
-          className="w-full h-auto block cursor-pointer z-0 flex-1"
+          className="w-full max-w-[900px] h-auto block cursor-pointer z-0 mx-auto"
           style={{ aspectRatio: "900/600", touchAction: "none", imageRendering: "auto" }}
         />
 
@@ -760,7 +772,7 @@ export default function HouseCanvas({
                   {selectedProfile.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={selectedProfile.avatarUrl}
+                      src={toHighResAvatar(selectedProfile.avatarUrl)}
                       alt={selectedProfile.name}
                       className="w-full h-full object-cover"
                     />
@@ -2363,21 +2375,25 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 function PadButton({ onMove }: { onMove: (dx: number, dy: number) => void }) {
   const btn =
-    "w-12 h-12 bg-[#8b5a2b] text-white rounded-xl active:scale-95 flex items-center justify-center border-2 border-[#5c3a1a] shadow-sm font-bold text-lg select-none cursor-pointer";
+    "w-12 h-12 bg-[#8b5a2b] text-white rounded-xl active:scale-95 flex items-center justify-center border-2 border-[#5c3a1a] shadow-sm font-bold text-lg select-none cursor-pointer touch-manipulation";
+  const mkHandler = (dx: number, dy: number) => (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    onMove(dx, dy);
+  };
   return (
     <div className="grid grid-cols-3 gap-1.5 p-2 bg-[#fdf8f0] border border-[#e7d5b8] rounded-2xl shadow-sm">
       <div />
-      <button className={btn} onTouchStart={() => onMove(0, -22)} onClick={() => onMove(0, -22)}>
+      <button className={btn} onPointerDown={mkHandler(0, -22)} onClick={mkHandler(0, -22)}>
         ↑
       </button>
       <div />
-      <button className={btn} onTouchStart={() => onMove(-22, 0)} onClick={() => onMove(-22, 0)}>
+      <button className={btn} onPointerDown={mkHandler(-22, 0)} onClick={mkHandler(-22, 0)}>
         ←
       </button>
-      <button className={btn} onTouchStart={() => onMove(0, 22)} onClick={() => onMove(0, 22)}>
+      <button className={btn} onPointerDown={mkHandler(0, 22)} onClick={mkHandler(0, 22)}>
         ↓
       </button>
-      <button className={btn} onTouchStart={() => onMove(22, 0)} onClick={() => onMove(22, 0)}>
+      <button className={btn} onPointerDown={mkHandler(22, 0)} onClick={mkHandler(22, 0)}>
         →
       </button>
     </div>

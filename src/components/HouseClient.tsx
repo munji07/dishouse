@@ -109,6 +109,12 @@ export default function HouseClient({
   const prevHouseObjectsRef = useRef<HouseObject[] | null>(null);
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
+  // Auto-clear error after 3s
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 3000);
+    return () => clearTimeout(t);
+  }, [error]);
   // Close presence dropdown on outside click
   useEffect(() => {
     if (!showPresenceList) return;
@@ -131,7 +137,8 @@ export default function HouseClient({
     s.on("disconnect", () => setConnected(false));
     s.on("connect_error", ({ message }) => {
       setConnected(false);
-      setError(message || "사이트 이용 권한을 확인할 수 없습니다.");
+      // Guest connections are now allowed — only show error for real failures
+      setError(message || "연결에 문제가 있어요. 새로고침해 주세요.");
     });
     s.on("rooms", (rows: RoomRow[]) => setRooms(rows));
     s.on("presence", (p) => setPresence(p));
@@ -677,9 +684,9 @@ export default function HouseClient({
         </div>
       )}
 
-      {/* 2D House Display Frame */}
+      {/* 2D House Display Frame — capped to 900px inner canvas width for crisp DPR */}
       <div
-        className={`world-frame relative z-0 rounded-[24px] border-[5px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_28px_rgba(60,30,10,0.18)] overflow-hidden warm-enter house-motion-${houseMotion}`}
+        className={`world-frame relative z-0 rounded-[24px] border-[5px] border-[#8b5a2b] bg-[#8b5a2b] shadow-[0_12px_28px_rgba(60,30,10,0.18)] overflow-hidden warm-enter house-motion-${houseMotion} w-full max-w-[936px] mx-auto`}
         style={{ animationDelay: "60ms" }}
       >
         <div className="bg-[#fdf8f0] rounded-[18px] overflow-hidden">
@@ -687,7 +694,7 @@ export default function HouseClient({
             <div className="text-[11px] font-black tracking-widest text-[#fde68a]"><span aria-hidden="true" className="mr-1">⌂</span>공용 생활관 · DISHOUSE</div>
             <div className="text-[10px] text-[#fde68a]/75">{objectMessage ?? `${curMeta?.name ?? "거실"}에 머무는 중`}</div>
           </div>
-          <div className="p-1.5 sm:p-2 bg-[#26150a] flex">
+          <div className="p-1.5 sm:p-2 bg-[#26150a] flex justify-center">
             <HouseCanvas
               me={me}
               others={Object.values(others)}

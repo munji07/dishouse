@@ -94,7 +94,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .house-client .text-\[10px\] { font-size: .75rem !important; line-height: 1.35; }
 .house-client .text-\[11px\] { font-size: .8125rem !important; line-height: 1.4; }
 .house-client .text-xs { font-size: .8125rem; line-height: 1.45; }
-.house-client > div { border-radius: 4px !important; box-shadow: none !important; }
 .house-client > div:first-child > div:first-child,
 .world-chat > div:first-child { background: #f4e4cc !important; }
 .house-management .text-\[\#8b6a4a\],

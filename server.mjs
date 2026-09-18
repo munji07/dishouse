@@ -1245,14 +1245,12 @@ function broadcastPresence() {
   io.emit("presence", { total, byRoom, byHouse });
 }
 
-io.use(async (socket, nextFn) => {
+io.use((socket, nextFn) => {
   const cookieHeader = socket.handshake.headers.cookie;
   const raw = parseCookieInline(cookieHeader, COOKIE_NAME);
   const sess = decodeSessionInline(raw);
-  if (!sess?.discordId) {
-    return nextFn(new Error("Discord 로그인이 필요합니다."));
-  }
-  socket.data.session = sess;
+  // Allow guest (no session) to view the house; write actions are guarded per-handler
+  socket.data.session = sess?.discordId ? sess : null;
   return nextFn();
 });
 
@@ -1261,7 +1259,7 @@ io.on("connection", async (socket) => {
   const userId = sess?.discordId ?? `guest:${socket.id.slice(0, 6)}`;
   const displayName = sess?.displayName ?? sess?.username ?? "게스트";
   const avatarUrl = sess?.avatarUrl ?? null;
-  const isGuest = false;
+  const isGuest = !sess?.discordId;
 
   console.log(`[socket] connect ${socket.id} as ${displayName} (${userId})`);
 
@@ -1980,6 +1978,10 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("chat", async ({ roomId, content }) => {
+    if (isGuest) {
+      socket.emit("chatError", { message: "로그인 후 채팅할 수 있어요. Discord로 입장하면 대화가 Discord 채널에도 전송됩니다." });
+      return;
+    }
     const now = Date.now();
     const last = chatLastAt.get(socket.id) ?? 0;
     if (now - last < CHAT_COOLDOWN_MS) {
