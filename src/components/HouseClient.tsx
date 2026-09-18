@@ -102,6 +102,7 @@ export default function HouseClient({
   const [houseObjectsLoaded, setHouseObjectsLoaded] = useState(false);
   const [showObjectShop, setShowObjectShop] = useState(false);
   const [objectMessage, setObjectMessage] = useState<string | null>(null);
+  const [isCreatingHouse, setIsCreatingHouse] = useState(false);
 
   const meId = me?.discordId ?? null;
   const roomsRef = useRef(rooms);
@@ -211,8 +212,9 @@ export default function HouseClient({
     // houses
     s.on("houses", (rows: HouseRow[]) => setHouses(rows));
     s.on("house:list", (rows: HouseRow[]) => setHouses(rows));
-    s.on("house:created", () => { s.emit("house:list"); s.emit("house:myInvites"); });
+    s.on("house:created", () => { setIsCreatingHouse(false); s.emit("house:list"); s.emit("house:myInvites"); });
     s.on("house:entered", ({ house, roomId }: HouseEnteredEvent) => {
+      setIsCreatingHouse(false);
       setCurrentRoom(roomId);
       setHouseMotion("arriving");
       window.setTimeout(() => setHouseMotion("idle"), 700);
@@ -234,6 +236,7 @@ export default function HouseClient({
     });
     s.on("house:ok", ({ message }: MessageEvent) => { setHouseMsg(message); setTimeout(()=>setHouseMsg(null), 2500); s.emit("house:list"); s.emit("house:myInvites"); });
     s.on("house:error", ({ message }: MessageEvent) => {
+      setIsCreatingHouse(false);
       // Revert optimistic furniture update if this error is furniture-related
       if (prevHouseObjectsRef.current && /벽|가구|설치|겹침|공간|보유/.test(message)) {
         setHouseObjects(prevHouseObjectsRef.current);
@@ -411,7 +414,7 @@ export default function HouseClient({
             {/* 내 집 관리 */}
             <div className="flex flex-wrap items-center gap-2">
               {!me ? <span className="text-xs text-[#8b6a4a]">로그인 후 내 집을 만들 수 있어요.</span> : !myHouse ? (
-                <button onClick={()=>socket?.emit("house:create")} className="px-4 py-1.5 rounded-full bg-[#8b5a2b] text-white text-xs font-bold hover:bg-[#6b3d1a] cursor-pointer">내 집 생성</button>
+                <button disabled={isCreatingHouse} onClick={()=>{ if (isCreatingHouse) return; setIsCreatingHouse(true); socket?.emit("house:create"); }} className={`px-4 py-1.5 rounded-full text-xs font-bold cursor-pointer ${isCreatingHouse ? "bg-zinc-300 text-zinc-500 cursor-not-allowed" : "bg-[#8b5a2b] text-white hover:bg-[#6b3d1a]"}`}>{isCreatingHouse ? "생성 중…" : "내 집 생성"}</button>
               ) : (
                 <>
                   <span className="text-xs font-bold text-[#5c3a1a]">{myHouse.channel_name} · {myHouse.floor}층 · {myHouse.visibility==='public' ? '공용' : myHouse.visibility==='private' ? '비공개' : '초대만'}</span>

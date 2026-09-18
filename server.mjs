@@ -389,6 +389,7 @@ const ROOM_EMOJI = {
   bathroom: "🚿",
 };
 const HOUSE_GUILD_ID = process.env.DISCORD_GUILD_ID || "1538513625730383902";
+const houseCreateLocks = new Set(); // ownerId → creation in progress (prevents double-click race)
 
 // ── Houses DB ──────────────────────────────────────────────────────────
 async function ensureHouseTables() {
@@ -577,21 +578,41 @@ async function createHouseForUser(guild, ownerId, displayName) {
     throw new Error(
       "개인 방을 만들려면 해당 Discord 서버에 가입되어 있어야 합니다.",
     );
-  const existing = await getHouseByOwner(guild.id, ownerId);
-  if (existing)
+  // Quick pre-check (also guarded by JS lock in handler)
+  const existingPre = await getHouseByOwner(guild.id, ownerId);
+  if (existingPre)
     throw new Error("이미 내 집이 있어요. 한 사람당 집은 하나만 만들 수 있습니다.");
-  const existingRooms = existing?.category_id
-    ? await pool
-        .query(
-          `SELECT room_id, channel_id FROM dishouse_house_rooms WHERE house_id=$1`,
-          [existing.id],
-        )
-        .then((result) => result.rows)
-    : [];
-  // allocate next available floor (5층부터 시작, 중복 방지)
-  const { rows: floorRows } = await pool.query(`SELECT COALESCE(MAX(floor), 4) AS max_floor FROM dishouse_houses WHERE guild_id=$1`, [guild.id]);
-  const floor = Number(floorRows[0]?.max_floor ?? 4) + 1;
-  const houseName = formatHouseChannelName(floor, displayName);
+
+  // Reserve floor atomically inside a transaction (SELECT FOR UPDATE) to prevent duplicate floors
+  const client = await pool.connect();
+  let floor, houseName, houseId;
+  try {
+    await client.query("BEGIN");
+    const { rows: floorRows } = await client.query(
+      `SELECT COALESCE(MAX(floor), 4) AS max_floor FROM dishouse_houses WHERE guild_id=$1 FOR UPDATE`,
+      [guild.id],
+    );
+    floor = Number(floorRows[0]?.max_floor ?? 4) + 1;
+    houseName = formatHouseChannelName(floor, displayName);
+    // Re-check owner inside TX and reserve row with pending channel ids
+    const { rows: ownerRows } = await client.query(
+      `SELECT id FROM dishouse_houses WHERE guild_id=$1 AND owner_id=$2 FOR UPDATE`,
+      [guild.id, ownerId],
+    );
+    if (ownerRows[0]) throw new Error("이미 내 집이 있어요. 한 사람당 집은 하나만 만들 수 있습니다.");
+    const { rows } = await client.query(
+      `INSERT INTO dishouse_houses (guild_id, owner_id, owner_name, floor, channel_id, channel_name, visibility, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [guild.id, ownerId, displayName, floor, "pending", houseName, "invite_only", "pending"],
+    );
+    houseId = rows[0].id;
+    await client.query("COMMIT");
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw e;
+  } finally {
+    client.release();
+  }
+
   const overwrites = [
     { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     {
@@ -603,54 +624,51 @@ async function createHouseForUser(guild, ownerId, displayName) {
       ],
     },
   ];
-  const existingCategory = existing?.category_id
-    ? await guild.channels.fetch(existing.category_id).catch(() => null)
-    : null;
-  const category =
-    existingCategory ??
-    (await guild.channels.create({
+  let category;
+  try {
+    category = await guild.channels.create({
       name: houseName,
       type: 4,
       permissionOverwrites: overwrites,
-    }));
-  if (!category) throw new Error("개인 집 카테고리를 만들 수 없습니다.");
+    });
+  } catch (e) {
+    // Roll back reserved row if Discord creation fails
+    await pool.query(`DELETE FROM dishouse_houses WHERE id=$1`, [houseId]).catch(() => {});
+    throw e;
+  }
+  if (!category) {
+    await pool.query(`DELETE FROM dishouse_houses WHERE id=$1`, [houseId]).catch(() => {});
+    throw new Error("개인 집 카테고리를 만들 수 없습니다.");
+  }
 
   const roomRows = [];
-  for (const roomId of ROOM_IDS) {
-    const storedRoom = existingRooms.find((room) => room.room_id === roomId);
-    let room = storedRoom
-      ? await guild.channels.fetch(storedRoom.channel_id).catch(() => null)
-      : null;
-    if (room) {
-      await room.setName(ROOM_LABEL[roomId]).catch(() => {});
-      await room.setParent(category.id).catch(() => {});
-    } else {
-      room = await guild.channels.create({
+  try {
+    for (const roomId of ROOM_IDS) {
+      const room = await guild.channels.create({
         name: ROOM_LABEL[roomId],
         type: 0,
         parent: category.id,
       });
+      await room.permissionOverwrites.edit(owner.id, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+      });
+      roomRows.push({ roomId, channelId: room.id, channelName: room.name });
     }
-    await room.permissionOverwrites.edit(owner.id, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-    });
-    roomRows.push({ roomId, channelId: room.id, channelName: room.name });
+  } catch (e) {
+    // Clean up partially created Discord channels and DB row
+    for (const r of roomRows) {
+      await guild.channels.fetch(r.channelId).then((ch) => ch?.delete().catch(() => {})).catch(() => {});
+    }
+    await guild.channels.fetch(category.id).then((ch) => ch?.delete().catch(() => {})).catch(() => {});
+    await pool.query(`DELETE FROM dishouse_houses WHERE id=$1`, [houseId]).catch(() => {});
+    throw e;
   }
   const living = roomRows.find((room) => room.roomId === "living");
   const { rows } = await pool.query(
-    `INSERT INTO dishouse_houses (guild_id, owner_id, owner_name, floor, channel_id, channel_name, visibility, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (guild_id, owner_id) DO UPDATE SET floor=EXCLUDED.floor, channel_id=EXCLUDED.channel_id, channel_name=EXCLUDED.channel_name, category_id=EXCLUDED.category_id, owner_name=EXCLUDED.owner_name, updated_at=now() RETURNING *`,
-    [
-      guild.id,
-      ownerId,
-      displayName,
-      floor,
-      living.channelId,
-      houseName,
-      "invite_only",
-      category.id,
-    ],
+    `UPDATE dishouse_houses SET channel_id=$1, channel_name=$2, category_id=$3, updated_at=now() WHERE id=$4 RETURNING *`,
+    [living.channelId, houseName, category.id, houseId],
   );
   const house = rows[0];
   await pool.query(
@@ -1554,6 +1572,12 @@ io.on("connection", async (socket) => {
       return socket.emit("house:error", {
         message: "로그인 후 집을 만들 수 있어요.",
       });
+    if (houseCreateLocks.has(userId)) {
+      return socket.emit("house:error", {
+        message: "이미 집을 만들고 있어요. 잠시만 기다려 주세요.",
+      });
+    }
+    houseCreateLocks.add(userId);
     try {
       const guild = await getHouseGuild();
       const existing = await getHouseByOwner(HOUSE_GUILD_ID, userId);
@@ -1601,6 +1625,8 @@ io.on("connection", async (socket) => {
     } catch (e) {
       console.error("[house:create]", e);
       socket.emit("house:error", { message: String(e.message) });
+    } finally {
+      houseCreateLocks.delete(userId);
     }
   });
   socket.on("house:members", async ({ query }) => {
