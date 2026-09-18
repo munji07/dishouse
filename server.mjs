@@ -588,8 +588,10 @@ async function createHouseForUser(guild, ownerId, displayName) {
   let floor, houseName, houseId;
   try {
     await client.query("BEGIN");
+    // Postgres는 aggregate + FOR UPDATE 를 허용하지 않음 → advisory lock 으로 guild별 생성 직렬화
+    await client.query(`SELECT pg_advisory_xact_lock(('x' || substr(md5($1::text),1,8))::bit(32)::int)`, [guild.id]);
     const { rows: floorRows } = await client.query(
-      `SELECT COALESCE(MAX(floor), 4) AS max_floor FROM dishouse_houses WHERE guild_id=$1 FOR UPDATE`,
+      `SELECT COALESCE(MAX(floor), 4) AS max_floor FROM dishouse_houses WHERE guild_id=$1`,
       [guild.id],
     );
     floor = Number(floorRows[0]?.max_floor ?? 4) + 1;
